@@ -1,16 +1,16 @@
 # Watchful — Progress Log
 
 ## 📊 Current Status
-- **Last completed step:** none yet
-- **Currently working on:** PAS 0 - Setup
-- **Last update:** 2026-06-05 19:18
+- **Last completed step:** PAS 0 - Setup ✅
+- **Currently working on:** PAS 1 - Video Source abstraction
+- **Last update:** 2026-06-05 19:20
 - **Blockers:** none
 
 ## 🎯 Steps Overview
 
 | # | Title | Status | Commit | Notes |
 |---|---|---|---|---|
-| 0 | Setup repo + Ollama + environment | 🚧 IN PROGRESS | - | Py3.13, moondream+llama3.2-vision |
+| 0 | Setup repo + Ollama + environment | ✅ DONE | 0dc20f4 | Py3.13, moondream+llama3.2-vision |
 | 1 | Video Source abstraction | ⏳ TODO | - | - |
 | 2 | VLM Client (Ollama + Moondream) | ⏳ TODO | - | - |
 | 3 | YOLO Detector + Tracker | ⏳ TODO | - | - |
@@ -32,9 +32,9 @@
 ## ✅ Step-by-Step Checklists
 
 ### PAS 0: Setup repo + Ollama + environment
-**Status:** 🚧 IN PROGRESS
+**Status:** ✅ DONE
 **Started:** 2026-06-05 19:10
-**Commit:** -
+**Commit:** 0dc20f4
 
 Checklist:
 - [x] Repo cloned local — `git clone` → exit 0, on `main`
@@ -52,7 +52,7 @@ Checklist:
 - [x] Python deps installed — `pip install -r requirements.txt` exit 0
 - [x] Import test passed — cv2 4.13.0, ultralytics 8.4.60, torch 2.12.0+cpu, fastapi 0.136.3, numpy 2.4.6, openai 2.41.0 → ALL IMPORTS PASSED
 - [x] PROGRESS.md created
-- [ ] First commit + push done
+- [x] First commit + push done — commit `0dc20f4`, pushed `2d37972..0dc20f4 main -> main` (exit 0)
 
 **Notes:** torch is CPU-only (cuda=False) → may drop yolov8m→yolov8n in PAS 3 if FPS<15. Python 3.13 used (no 3.11 on machine); all ML wheels resolved fine.
 
@@ -279,6 +279,7 @@ Checklist:
 - 2026-06-05 19:16 | PAS 0 | venv Python 3.13.12 created; deps installed (exit 0)
 - 2026-06-05 19:17 | PAS 0 | Import test PASSED (cv2/ultralytics/torch/fastapi/openai/ollama)
 - 2026-06-05 19:18 | PAS 0 | PROGRESS.md created
+- 2026-06-05 19:20 | PAS 0 | ✅ DONE — committed 0dc20f4, pushed to main (16/16). Write access to repo CONFIRMED.
 
 ## 🎓 Decision Log
 - **VLM model:** moondream (primary, fast, 1.7GB) + llama3.2-vision (fallback for hard SEMANTIC, 7.8GB). Replaces brief's `llava:7b` suggestion — both already pulled locally. User-approved.
