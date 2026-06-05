@@ -1,9 +1,9 @@
 # Watchful — Progress Log
 
 ## 📊 Current Status
-- **Last completed step:** PAS 5 - Predicate Compiler (VLM-based) ✅
-- **Currently working on:** PAS 6 - Predicate Evaluator (Hybrid)
-- **Last update:** 2026-06-05 20:12
+- **Last completed step:** PAS 6 - Predicate Evaluator (Hybrid) ✅
+- **Currently working on:** PAS 7 - Reference Frame + Adaptive Sampling
+- **Last update:** 2026-06-05 20:22
 - **Blockers:** none
 
 ## 🎯 Steps Overview
@@ -16,7 +16,7 @@
 | 3 | YOLO Detector + Tracker | ✅ DONE | 7e8103d | yolov8n 31.9 FPS, bus 3 persons |
 | 4 | Pose Analyzer | ✅ DONE | 672798a | 3 standing, rules 9/9, tag v0.2 |
 | 5 | Predicate Compiler (VLM-based) | ✅ DONE | c97b346 | 10/10 EN+RO, hybrid |
-| 6 | Predicate Evaluator (Hybrid) | ⏳ TODO | - | - |
+| 6 | Predicate Evaluator (Hybrid) | ✅ DONE | bafac94 | 11/11 checks, tag v0.3 |
 | 7 | Reference Frame + Adaptive Sampling | ⏳ TODO | - | - |
 | 8 | Anti-False-Positive Layer | ⏳ TODO | - | - |
 | 9 | Database & Models | ⏳ TODO | - | - |
@@ -151,19 +151,22 @@ Checklist:
 **Notes:** HYBRID design (Decision Log) — deterministic EN+RO rules first (instant, reliable), templated SEMANTIC fallback. moondream too unreliable as a *text* compiler (hallucinates structural types) → not trusted for routing by default; structural VLM override only on compile_heavy (llama3.2-vision). Caught via re-run discipline (8/10 regression spotted, fixed → 10/10).
 
 ### PAS 6: Predicate Evaluator (Hybrid)
-**Status:** ⏳ TODO
+**Status:** ✅ DONE
+**Commit:** bafac94
 
 Checklist:
-- [ ] backend/predicates/evaluator.py created
-- [ ] HybridEvaluator routes per predicate.evaluator field
-- [ ] YOLO evaluator: count, presence, zone
-- [ ] Pose evaluator: hand raised, sitting, standing
-- [ ] VLM evaluator: complex semantic (sends crop to Ollama; heavy model for SEMANTIC)
-- [ ] EvalResult dataclass
-- [ ] Adaptive sampling: VLM apelat doar la 1 FPS, YOLO la 25 FPS
-- [ ] Test: each evaluator type produces correct result
-- [ ] Tag v0.3-agent-loop created
-- [ ] Commit + push done
+- [x] backend/predicates/evaluator.py created
+- [x] HybridEvaluator routes per predicate.evaluator field
+- [x] YOLO evaluator: count, presence, zone — + absence-for-duration
+- [x] Pose evaluator: hand raised, sitting, standing
+- [x] VLM evaluator: complex semantic (full-frame default, crop via params; heavy opt-in) — bus.jpg "is there a bus?"→True
+- [x] EvalResult dataclass — + EvalContext per-frame bundle
+- [x] Adaptive sampling: VLM throttled to vlm_max_fps (per-predicate cache); YOLO/Pose every frame — verified cached <1s, fresh after
+- [x] Test: each evaluator type produces correct result — **11/11 checks**
+- [x] Tag v0.3-agent-loop created
+- [x] Commit + push done
+
+**Notes:** semantic VLM uses moondream by default (fast ~250ms); heavy=True (llama3.2-vision) opt-in via params. point-in-zone via cv2.pointPolygonTest.
 
 ### PAS 7: Reference Frame + Adaptive Sampling
 **Status:** ⏳ TODO
@@ -301,6 +304,7 @@ Checklist:
 - 2026-06-05 19:50 | PAS 3 | ✅ DONE — PersonDetector+TrackManager, webcam 31.9 FPS, bus.jpg 3 persons; committed 7e8103d
 - 2026-06-05 20:00 | PAS 4 | ✅ DONE — PoseAnalyzer, skeleton verified, rules 9/9, 31.5 FPS; committed 672798a, tag v0.2-detection
 - 2026-06-05 20:12 | PAS 5 | ✅ DONE — hybrid compiler 10/10 EN+RO; spotted & fixed an 8/10 regression by re-running; committed c97b346
+- 2026-06-05 20:22 | PAS 6 | ✅ DONE — HybridEvaluator 11/11 checks (yolo/pose/vlm + adaptive sampling); committed bafac94, tag v0.3-agent-loop
 
 ## 🎓 Decision Log
 - **VLM model:** moondream (primary, fast, 1.7GB) + llama3.2-vision (fallback for hard SEMANTIC, 7.8GB). Replaces brief's `llava:7b` suggestion — both already pulled locally. User-approved.
