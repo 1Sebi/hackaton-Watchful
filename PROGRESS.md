@@ -1,9 +1,9 @@
 # Watchful — Progress Log
 
 ## 📊 Current Status
-- **Last completed step:** PAS 8 - Anti-False-Positive Layer ✅
-- **Currently working on:** PAS 9 - Database & Models
-- **Last update:** 2026-06-05 20:40
+- **Last completed step:** PAS 9 - Database & Models ✅
+- **Currently working on:** PAS 10 - Action Dispatcher + Hikvision
+- **Last update:** 2026-06-05 20:48
 - **Blockers:** none
 
 ## 🎯 Steps Overview
@@ -19,7 +19,7 @@
 | 6 | Predicate Evaluator (Hybrid) | ✅ DONE | bafac94 | 11/11 checks, tag v0.3 |
 | 7 | Reference Frame + Adaptive Sampling | ✅ DONE | cd84065 | 5/5, empty→no VLM |
 | 8 | Anti-False-Positive Layer | ✅ DONE | 64529aa | 4/4, max 1/cooldown, tag v0.4 |
-| 9 | Database & Models | ⏳ TODO | - | - |
+| 9 | Database & Models | ✅ DONE | b0a65bb | CRUD 6/6 |
 | 10 | Action Dispatcher + Hikvision | ⏳ TODO | - | - |
 | 11 | FastAPI Backend + Pipeline | ⏳ TODO | - | - |
 | 12 | Visualizer | ⏳ TODO | - | - |
@@ -198,15 +198,16 @@ Checklist:
 **Notes:** 4/4 checks. threshold blocks low-conf, debounce needs N consecutive, happy path fires once then mutes.
 
 ### PAS 9: Database & Models
-**Status:** ⏳ TODO
+**Status:** ✅ DONE
+**Commit:** b0a65bb
 
 Checklist:
-- [ ] backend/database.py SQLAlchemy + SQLite
-- [ ] backend/models/condition.py
-- [ ] backend/models/event.py
-- [ ] backend/models/zone.py
-- [ ] CRUD verified via Python shell
-- [ ] Commit + push done
+- [x] backend/database.py SQLAlchemy + SQLite — engine/SessionLocal/init_db/get_db
+- [x] backend/models/condition.py — text + predicate(JSON) + action(JSON) + enabled
+- [x] backend/models/event.py — condition_id FK, detected/confidence/reason/action_taken/snapshot
+- [x] backend/models/zone.py — name + polygon(JSON)
+- [x] CRUD verified via Python shell — **6/6** (create/read/json-roundtrip/fk/update/delete)
+- [x] Commit + push done
 
 ### PAS 10: Action Dispatcher + Hikvision
 **Status:** ⏳ TODO
@@ -313,6 +314,7 @@ Checklist:
 - 2026-06-05 20:22 | PAS 6 | ✅ DONE — HybridEvaluator 11/11 checks (yolo/pose/vlm + adaptive sampling); committed bafac94, tag v0.3-agent-loop
 - 2026-06-05 20:30 | PAS 7 | ✅ DONE — ReferenceFrame + AdaptiveSampler 5/5, empty→no VLM; committed cd84065
 - 2026-06-05 20:40 | PAS 8 | ✅ DONE — AFP layer 4/4, 100 noisy→max 1/cooldown; committed 64529aa, tag v0.4-anti-false-positive
+- 2026-06-05 20:48 | PAS 9 | ✅ DONE — SQLAlchemy Condition/Event/Zone, CRUD 6/6; committed b0a65bb
 
 ## 🎓 Decision Log
 - **VLM model:** moondream (primary, fast, 1.7GB) + llama3.2-vision (fallback for hard SEMANTIC, 7.8GB). Replaces brief's `llava:7b` suggestion — both already pulled locally. User-approved.
