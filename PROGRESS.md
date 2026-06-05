@@ -1,9 +1,9 @@
 # Watchful — Progress Log
 
 ## 📊 Current Status
-- **Last completed step:** PAS 1 - Video Source abstraction ✅
-- **Currently working on:** PAS 2 - VLM Client (Ollama + Moondream)
-- **Last update:** 2026-06-05 19:30
+- **Last completed step:** PAS 2 - VLM Client (Ollama + Moondream) ✅
+- **Currently working on:** PAS 3 - YOLO Detector + Tracker
+- **Last update:** 2026-06-05 19:40
 - **Blockers:** none
 
 ## 🎯 Steps Overview
@@ -12,7 +12,7 @@
 |---|---|---|---|---|
 | 0 | Setup repo + Ollama + environment | ✅ DONE | 0dc20f4 | Py3.13, moondream+llama3.2-vision |
 | 1 | Video Source abstraction | ✅ DONE | 883a47b | webcam 30.1 FPS (MSMF) |
-| 2 | VLM Client (Ollama + Moondream) | ⏳ TODO | - | - |
+| 2 | VLM Client (Ollama + Moondream) | ✅ DONE | bfdcf27 | warm ~246ms, tag v0.1 |
 | 3 | YOLO Detector + Tracker | ⏳ TODO | - | - |
 | 4 | Pose Analyzer | ⏳ TODO | - | - |
 | 5 | Predicate Compiler (VLM-based) | ⏳ TODO | - | - |
@@ -77,23 +77,26 @@ Checklist:
 **Notes:** DSHOW webcam capped at 10 FPS (auto-exposure in indoor light) → switched Windows webcam backend to **MSMF** = 30.1 FPS at full 640x480, normal exposure. MJPG fourcc + buffersize 1 also set.
 
 ### PAS 2: VLM Client (Ollama + Moondream)
-**Status:** ⏳ TODO
+**Status:** ✅ DONE
+**Commit:** bfdcf27
 
 Checklist:
-- [ ] backend/vlm/__init__.py created
-- [ ] backend/vlm/client.py created
-- [ ] OllamaVLMClient class implemented
-- [ ] Base URL configurable (default localhost:11434)
-- [ ] ask(image, question, schema) method works
-- [ ] JSON output mode enforced
-- [ ] Timeout handling (30s default)
-- [ ] Retry logic (1x retry on connection error)
-- [ ] Frame resize before sending (max 768px wide)
-- [ ] scripts/test_vlm.py created
-- [ ] Test: image + "how many people?" returns JSON answer
-- [ ] Latency measured and reported
-- [ ] Tag v0.1-ollama-vlm created
-- [ ] Commit + push done
+- [x] backend/vlm/__init__.py created
+- [x] backend/vlm/client.py created
+- [x] OllamaVLMClient class implemented
+- [x] Base URL configurable (default localhost:11434, auto-appends /v1)
+- [x] ask(image, question, schema) method works
+- [x] JSON output mode enforced — response_format json_object + defensive _parse_json
+- [x] Timeout handling (30s default)
+- [x] Retry logic (1x retry on connection error) — APIConnectionError/APITimeoutError
+- [x] Frame resize before sending (max 768px wide)
+- [x] scripts/test_vlm.py created
+- [x] Test: image + "how many people?" returns JSON answer — `{"count":0,"confidence":0.0}`
+- [x] Latency measured and reported — **cold 277ms / warm 246ms**, health reachable
+- [x] Tag v0.1-ollama-vlm created
+- [x] Commit + push done
+
+**Notes:** moundream warm latency ~250ms — excellent for the loop. moondream undercounts people (count via VLM weak) → counting routed to YOLO by design (PAS 3/6). heavy=True switches to llama3.2-vision for hard semantic conditions.
 
 ### PAS 3: YOLO Detector + Tracker
 **Status:** ⏳ TODO
@@ -285,6 +288,7 @@ Checklist:
 - 2026-06-05 19:20 | PAS 0 | ✅ DONE — committed 0dc20f4, pushed to main (16/16). Write access to repo CONFIRMED.
 - 2026-06-05 19:25 | PAS 1 | Built VideoSource; webcam initially 10 FPS (DSHOW auto-exposure) → fixed via MSMF backend = 30.1 FPS
 - 2026-06-05 19:30 | PAS 1 | ✅ DONE — webcam 30.1 FPS, file 40/40 frames; committed 883a47b
+- 2026-06-05 19:40 | PAS 2 | ✅ DONE — OllamaVLMClient, visual Q→JSON, warm 246ms; committed bfdcf27, tag v0.1-ollama-vlm
 
 ## 🎓 Decision Log
 - **VLM model:** moondream (primary, fast, 1.7GB) + llama3.2-vision (fallback for hard SEMANTIC, 7.8GB). Replaces brief's `llava:7b` suggestion — both already pulled locally. User-approved.
