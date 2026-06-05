@@ -1,0 +1,37 @@
+{
+  "_about": "Watchful eval set. Sources: ultralytics bundled assets (bus.jpg=3 standing people, zidane.jpg=2 people), a synthetic empty frame, and AFP trap/steady streams. Each case: a compiled condition evaluated to a fire/no-fire decision, compared to expected. category: true (should fire) | trap (tempts a false positive) | neutral (empty scene). Semantic cases use the heavy local VLM (llama3.2-vision).",
+  "cases": [
+    {"id": "T1", "category": "true", "mode": "frame", "source": "bus.jpg", "condition": "more than 2 people", "expected": true},
+    {"id": "T2", "category": "true", "mode": "frame", "source": "bus.jpg", "condition": "more than 1 person", "expected": true},
+    {"id": "T3", "category": "true", "mode": "frame", "source": "bus.jpg", "condition": "fewer than 5 people", "expected": true},
+    {"id": "T4", "category": "true", "mode": "frame", "source": "bus.jpg", "condition": "someone is standing", "expected": true},
+    {"id": "T5", "category": "true", "mode": "frame", "source": "bus.jpg", "condition": "fewer than 10 people", "expected": true},
+    {"id": "T6", "category": "true", "mode": "frame", "source": "zidane.jpg", "condition": "more than 1 person", "expected": true},
+    {"id": "T7", "category": "true", "mode": "frame", "source": "zidane.jpg", "condition": "fewer than 4 people", "expected": true},
+    {"id": "T8", "category": "true", "mode": "frame", "source": "bus.jpg", "condition": "is there a bus in this image", "expected": true, "heavy": true},
+    {"id": "T9", "category": "true", "mode": "stream", "pattern": "steady", "condition": "sustained positive", "expected": true},
+    {"id": "T10", "category": "true", "mode": "stream", "pattern": "absence", "condition": "no one present for 2 seconds", "expected": true},
+
+    {"id": "P1", "category": "trap", "mode": "frame", "source": "bus.jpg", "condition": "more than 5 people", "expected": false},
+    {"id": "P2", "category": "trap", "mode": "frame", "source": "bus.jpg", "condition": "more than 10 people", "expected": false},
+    {"id": "P3", "category": "trap", "mode": "frame", "source": "bus.jpg", "condition": "someone raises their hand", "expected": false},
+    {"id": "P4", "category": "trap", "mode": "frame", "source": "bus.jpg", "condition": "someone is sitting", "expected": false},
+    {"id": "P5", "category": "trap", "mode": "frame", "source": "zidane.jpg", "condition": "more than 3 people", "expected": false},
+    {"id": "P6", "category": "trap", "mode": "frame", "source": "zidane.jpg", "condition": "more than 5 people", "expected": false},
+    {"id": "P7", "category": "trap", "mode": "frame", "source": "zidane.jpg", "condition": "someone raises their hand", "expected": false},
+    {"id": "P8", "category": "trap", "mode": "frame", "source": "zidane.jpg", "condition": "someone is sitting", "expected": false},
+    {"id": "P9", "category": "trap", "mode": "stream", "pattern": "flicker", "condition": "2-frame flicker (debounce must suppress)", "expected": false},
+    {"id": "P10", "category": "trap", "mode": "frame", "source": "bus.jpg", "condition": "is there a snowy mountain in this image", "expected": false, "heavy": true},
+
+    {"id": "N1", "category": "neutral", "mode": "frame", "source": "empty", "condition": "more than 0 people", "expected": false},
+    {"id": "N2", "category": "neutral", "mode": "frame", "source": "empty", "condition": "more than 1 person", "expected": false},
+    {"id": "N3", "category": "neutral", "mode": "frame", "source": "empty", "condition": "more than 2 people", "expected": false},
+    {"id": "N4", "category": "neutral", "mode": "frame", "source": "empty", "condition": "more than 5 people", "expected": false},
+    {"id": "N5", "category": "neutral", "mode": "frame", "source": "empty", "condition": "someone is standing", "expected": false},
+    {"id": "N6", "category": "neutral", "mode": "frame", "source": "empty", "condition": "someone is sitting", "expected": false},
+    {"id": "N7", "category": "neutral", "mode": "frame", "source": "empty", "condition": "someone raises their hand", "expected": false},
+    {"id": "N8", "category": "neutral", "mode": "frame", "source": "empty", "condition": "more than 3 people", "expected": false},
+    {"id": "N9", "category": "neutral", "mode": "frame", "source": "empty", "condition": "is there a person in this image", "expected": false, "heavy": true},
+    {"id": "N10", "category": "neutral", "mode": "frame", "source": "empty", "condition": "is there a dog in this image", "expected": false, "heavy": true}
+  ]
+}
