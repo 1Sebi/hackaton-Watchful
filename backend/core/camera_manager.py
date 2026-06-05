@@ -60,7 +60,9 @@ class CameraWorker:
     def __init__(self, cam: dict, engine: _Engine, manager: "CameraManager") -> None:
         self.id: str = cam["id"]
         self.name: str = cam["name"]
-        self.source: str = cam["url"]
+        self.sub_url: str = cam["url"]                       # light sub-stream (tile)
+        self.main_url: str = cam.get("main_url", cam["url"])  # 4K main (active)
+        self._cur_url: Optional[str] = None
         self.engine = engine
         self.manager = manager
 
@@ -136,8 +138,10 @@ class CameraWorker:
         if self.running:
             return
         self.running = True
+        want = self.main_url if self.is_active else self.sub_url  # active opens 4K
         try:
-            self._src = VideoSource(self.source)
+            self._src = VideoSource(want)
+            self._cur_url = want
         except Exception as e:  # noqa: BLE001
             self.error = f"open failed: {e}"
             self.running = False
@@ -149,6 +153,27 @@ class CameraWorker:
         ]
         for t in self._threads:
             t.start()
+
+    def set_stream(self, main: bool) -> None:
+        """Reopen on the 4K main stream (active) or the light sub-stream (tile).
+
+        Runs off the request path (4K can take ~2s to connect); the render/detect
+        loops tolerate the brief swap (a read on the released source returns None).
+        """
+        want = self.main_url if main else self.sub_url
+        if self._cur_url == want or not self.running:
+            return
+        try:
+            new = VideoSource(want)
+        except Exception as e:  # noqa: BLE001
+            self.error = f"open failed: {e}"
+            return
+        old = self._src
+        self._src = new
+        self._cur_url = want
+        self.error = None
+        if old is not None:
+            old.release()
 
     def stop(self) -> None:
         self.running = False
@@ -188,6 +213,13 @@ class CameraWorker:
                 time.sleep(0.15)
                 continue
             now = time.time()
+            # rate cap: analyze at most DETECT_MAX_FPS frames/sec (1 = once a second)
+            min_interval = 1.0 / settings.DETECT_MAX_FPS if settings.DETECT_MAX_FPS > 0 else 0.0
+            since = now - self._last_detect
+            if since < min_interval:
+                time.sleep(min(0.05, min_interval - since))
+                continue
+
             frame = self._src.read() if self._src else None
             if frame is None:
                 time.sleep(0.03)
@@ -195,9 +227,9 @@ class CameraWorker:
             frame = self._maybe_resize(frame)
 
             moving = self.motion_pct >= settings.MOTION_MIN_PCT
-            forced = (now - self._last_detect) >= 1.5  # never go fully blind
+            forced = since >= 5.0  # refresh a fully static scene at least every 5s
             if not (moving or forced):
-                time.sleep(0.03)  # OpenCV motion gate: static scene -> skip YOLO
+                time.sleep(0.05)  # OpenCV motion gate: static scene -> skip YOLO
                 continue
 
             t0 = time.time()
@@ -366,8 +398,8 @@ class CameraManager:
     def set_active(self, cam_id: str) -> bool:
         if cam_id not in self.workers:
             return False
+        old = self.workers.get(self.active_id) if self.active_id else None
         with self._lock:
-            old = self.workers.get(self.active_id) if self.active_id else None
             if old is not None and old.id != cam_id:
                 old.tracker.reset()
                 with old._res_lock:
@@ -379,6 +411,11 @@ class CameraManager:
                 new._last_dets, new._last_pose_map = [], {}
             self.engine.detector.reset_tracker()
             new.reload()
+        # swap streams in the background (4K connect can take ~2s): the new active
+        # camera upgrades to 4K main; the old one drops back to the light sub-stream.
+        threading.Thread(target=new.set_stream, args=(True,), daemon=True).start()
+        if old is not None and old.id != cam_id:
+            threading.Thread(target=old.set_stream, args=(False,), daemon=True).start()
         return True
 
     def cameras_state(self) -> dict:
