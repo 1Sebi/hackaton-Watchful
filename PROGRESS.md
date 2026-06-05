@@ -1,9 +1,9 @@
 # Watchful — Progress Log
 
 ## 📊 Current Status
-- **Last completed step:** PAS 3 - YOLO Detector + Tracker ✅
-- **Currently working on:** PAS 4 - Pose Analyzer
-- **Last update:** 2026-06-05 19:50
+- **Last completed step:** PAS 4 - Pose Analyzer ✅
+- **Currently working on:** PAS 5 - Predicate Compiler (VLM-based)
+- **Last update:** 2026-06-05 20:00
 - **Blockers:** none
 
 ## 🎯 Steps Overview
@@ -14,7 +14,7 @@
 | 1 | Video Source abstraction | ✅ DONE | 883a47b | webcam 30.1 FPS (MSMF) |
 | 2 | VLM Client (Ollama + Moondream) | ✅ DONE | bfdcf27 | warm ~246ms, tag v0.1 |
 | 3 | YOLO Detector + Tracker | ✅ DONE | 7e8103d | yolov8n 31.9 FPS, bus 3 persons |
-| 4 | Pose Analyzer | ⏳ TODO | - | - |
+| 4 | Pose Analyzer | ✅ DONE | 672798a | 3 standing, rules 9/9, tag v0.2 |
 | 5 | Predicate Compiler (VLM-based) | ⏳ TODO | - | - |
 | 6 | Predicate Evaluator (Hybrid) | ⏳ TODO | - | - |
 | 7 | Reference Frame + Adaptive Sampling | ⏳ TODO | - | - |
@@ -117,18 +117,21 @@ Checklist:
 **Notes:** Default model → yolov8n.pt (CPU). Visual person test uses Ultralytics' bundled ASSETS/bus.jpg (local, zero network). Annotated proof at eval/screenshots/detector_bus.jpg (gitignored).
 
 ### PAS 4: Pose Analyzer
-**Status:** ⏳ TODO
+**Status:** ✅ DONE
+**Commit:** 672798a
 
 Checklist:
-- [ ] backend/core/pose_analyzer.py created
-- [ ] Loads yolov8m-pose.pt
-- [ ] COCO keypoints defined
-- [ ] IoU association > 0.3 with detections
-- [ ] is_hand_raised, is_sitting, is_standing implemented
-- [ ] Edge cases: missing keypoints → False
-- [ ] Visual test: skeleton overlay works
-- [ ] Tag v0.2-detection created
-- [ ] Commit + push done
+- [x] backend/core/pose_analyzer.py created
+- [x] Loads yolov8n-pose.pt (CPU; brief's yolov8m-pose too slow)
+- [x] COCO keypoints defined — COCO_KEYPOINTS + KP_INDEX + COCO_SKELETON
+- [x] IoU association > 0.3 with detections — associate(), 3/3 on bus.jpg
+- [x] is_hand_raised, is_sitting, is_standing implemented — geometric rules
+- [x] Edge cases: missing keypoints → False — verified (missing.no_* all OK)
+- [x] Visual test: skeleton overlay works — eval/screenshots/pose_bus.jpg verified
+- [x] Tag v0.2-detection created
+- [x] Commit + push done
+
+**Notes:** bus.jpg → 3 poses all standing; 9/9 deterministic rule checks; pose 31.5 FPS on webcam.
 
 ### PAS 5: Predicate Compiler (VLM-based)
 **Status:** ⏳ TODO
@@ -293,6 +296,7 @@ Checklist:
 - 2026-06-05 19:30 | PAS 1 | ✅ DONE — webcam 30.1 FPS, file 40/40 frames; committed 883a47b
 - 2026-06-05 19:40 | PAS 2 | ✅ DONE — OllamaVLMClient, visual Q→JSON, warm 246ms; committed bfdcf27, tag v0.1-ollama-vlm
 - 2026-06-05 19:50 | PAS 3 | ✅ DONE — PersonDetector+TrackManager, webcam 31.9 FPS, bus.jpg 3 persons; committed 7e8103d
+- 2026-06-05 20:00 | PAS 4 | ✅ DONE — PoseAnalyzer, skeleton verified, rules 9/9, 31.5 FPS; committed 672798a, tag v0.2-detection
 
 ## 🎓 Decision Log
 - **VLM model:** moondream (primary, fast, 1.7GB) + llama3.2-vision (fallback for hard SEMANTIC, 7.8GB). Replaces brief's `llava:7b` suggestion — both already pulled locally. User-approved.
