@@ -1,0 +1,63 @@
+# Watchful — camera & zone config for ThePlace. Validated on real hardware.
+#
+# RTSP per camera (password from .env, NEVER inline):
+#   rtsp://admin:<pass>@<nvr_ip>:554/Streaming/Channels/<channel*100 + stream>
+#   stream: 1 = main (3840x2160), 2 = sub (640x360)
+#   -> use SUB for presence/count (fast); MAIN for pose/gesture (4K needed).
+#
+# 21 registered feeds -> 19 UNIQUE physical cameras (2 are the same camera
+# registered on both NVRs; see duplicates_ignore).
+
+nvrs:
+  NVR1: { ip: 192.168.0.59, isapi: false }   # ISAPI :80 REFUSED -> no relays here
+  NVR2: { ip: 192.168.0.60, isapi: true }    # relays work (output 1 validated)
+
+# Detection settings proven on the real overhead scenes:
+detection:
+  model: yolov8m.pt          # NOT yolov8n — nano detected 0 seated/distant diners
+  confidence: 0.30           # conf 0.5 detected 0 people on a real restaurant frame
+  imgsz: 1280                # higher = small/distant people resolvable
+  stream_for_count: sub      # 640x360 is enough for counting
+  stream_for_pose: main      # gestures (hand-raise) need 4K + imgsz>=1280
+  tracker: bytetrack         # stable track ids -> not counted twice across frames
+  sample_fps: 3              # counting doesn't need 25 fps (adaptive sampling)
+
+# Same physical camera registered on both NVRs — process ONE, ignore the other:
+duplicates_ignore:
+  - NVR2/ch9     # identical to NVR1/ch7  (lobby bar)   corr 0.998
+  - NVR2/ch13    # identical to NVR1/ch2  (lobby)        corr 0.998
+
+# 19 unique cameras grouped by zone. Each zone = 1 camera (independent count),
+# EXCEPT event_hall which is genuinely 2 angles of one room (overlap -> dedup).
+zones:
+  w_entrance:         { cameras: [NVR1/ch1] }
+  lobby:              { cameras: [NVR1/ch2] }            # .36 (also NVR2/ch13, ignored)
+  east_exit:          { cameras: [NVR1/ch3] }
+  stairs:             { cameras: [NVR1/ch4] }            # "c2-c1"
+  restaurant_dining:  { cameras: [NVR1/ch5] }            # busy seating area
+  parking_north:      { cameras: [NVR1/ch6] }
+  lobby_bar:          { cameras: [NVR1/ch7] }            # .40 (also NVR2/ch9, ignored)
+  lounge:             { cameras: [NVR1/ch8] }
+  event_hall:                                            # OVERLAP — one hall, two ends
+    cameras: [NVR2/ch1, NVR2/ch5]                        # .23 conference SE + .25 event hall N
+    overlap: true
+    dedup: fusion_for_total                              # full-hall count -> homography fusion
+                                                         # per sub-area -> count each camera
+  lobby_marble:       { cameras: [NVR2/ch2] }            # .61 "Camera 01"
+  jacuzzi:            { cameras: [NVR2/ch3] }            # .47 pool/jacuzzi (brief flagship)
+  kitchen:            { cameras: [NVR2/ch4] }            # .20 dishwashers
+  restaurant_bar:     { cameras: [NVR2/ch6] }            # .48 (adjacent to dining, no overlap)
+  reception:          { cameras: [NVR2/ch7] }            # .46
+  bar:                { cameras: [NVR2/ch10] }           # .41
+  parking_west:       { cameras: [NVR2/ch12] }           # .10 "west -1 entry"
+  gym:                { cameras: [NVR2/ch15] }           # .33
+  restaurant_service: { cameras: [NVR2/ch16] }           # .56 "acces ospatari"
+
+# Offline / unusable (don't configure conditions on these):
+#   NVR2/ch8  (.4)  -> no stream
+#   NVR2/ch11 (.74) -> no stream
+#   NVR2/ch14 (.57 "culoar lifturi") -> no signal (gray)
+
+actions:
+  relay:   { nvr: NVR2, output: 1 }     # validated (state toggles). NVR1 ISAPI blocked.
+  webhook: { provider: ntfy, note: "Title must be ASCII; emoji via Tags; space alerts >=15s" }
