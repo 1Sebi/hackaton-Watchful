@@ -1,9 +1,9 @@
 # Watchful — Progress Log
 
 ## 📊 Current Status
-- **Last completed step:** PAS 0 - Setup ✅
-- **Currently working on:** PAS 1 - Video Source abstraction
-- **Last update:** 2026-06-05 19:20
+- **Last completed step:** PAS 1 - Video Source abstraction ✅
+- **Currently working on:** PAS 2 - VLM Client (Ollama + Moondream)
+- **Last update:** 2026-06-05 19:30
 - **Blockers:** none
 
 ## 🎯 Steps Overview
@@ -11,7 +11,7 @@
 | # | Title | Status | Commit | Notes |
 |---|---|---|---|---|
 | 0 | Setup repo + Ollama + environment | ✅ DONE | 0dc20f4 | Py3.13, moondream+llama3.2-vision |
-| 1 | Video Source abstraction | ⏳ TODO | - | - |
+| 1 | Video Source abstraction | ✅ DONE | 883a47b | webcam 30.1 FPS (MSMF) |
 | 2 | VLM Client (Ollama + Moondream) | ⏳ TODO | - | - |
 | 3 | YOLO Detector + Tracker | ⏳ TODO | - | - |
 | 4 | Pose Analyzer | ⏳ TODO | - | - |
@@ -57,21 +57,24 @@ Checklist:
 **Notes:** torch is CPU-only (cuda=False) → may drop yolov8m→yolov8n in PAS 3 if FPS<15. Python 3.13 used (no 3.11 on machine); all ML wheels resolved fine.
 
 ### PAS 1: Video Source abstraction
-**Status:** ⏳ TODO
+**Status:** ✅ DONE
+**Commit:** 883a47b
 
 Checklist:
-- [ ] backend/core/video_source.py created
-- [ ] Supports int (webcam) source
-- [ ] Supports str (RTSP URL) source
-- [ ] Buffer size 1
-- [ ] Reconnect logic (max 5 attempts)
-- [ ] width/height/fps properties
-- [ ] read() returns Optional[np.ndarray]
-- [ ] release() works
-- [ ] Context manager
-- [ ] scripts/test_camera.py created
-- [ ] Test runs on webcam (or sample video fallback), FPS >= 15
-- [ ] Commit + push done
+- [x] backend/core/video_source.py created
+- [x] Supports int (webcam) source — runtime-tested, 30.1 FPS
+- [x] Supports str (RTSP URL) source — file path runtime-tested (40/40 frames); RTSP backend (CAP_FFMPEG) wired, not stream-tested (no RTSP available)
+- [x] Buffer size 1 — CAP_PROP_BUFFERSIZE=1
+- [x] Reconnect logic (max 5 attempts) — _reconnect_and_read, file EOF guarded
+- [x] width/height/fps properties
+- [x] read() returns Optional[np.ndarray]
+- [x] release() works — verified _cap is None after
+- [x] Context manager — __enter__/__exit__
+- [x] scripts/test_camera.py created
+- [x] Test runs on webcam, FPS >= 15 — **30.1 FPS @ 640x480** PASS
+- [x] Commit + push done
+
+**Notes:** DSHOW webcam capped at 10 FPS (auto-exposure in indoor light) → switched Windows webcam backend to **MSMF** = 30.1 FPS at full 640x480, normal exposure. MJPG fourcc + buffersize 1 also set.
 
 ### PAS 2: VLM Client (Ollama + Moondream)
 **Status:** ⏳ TODO
@@ -280,6 +283,8 @@ Checklist:
 - 2026-06-05 19:17 | PAS 0 | Import test PASSED (cv2/ultralytics/torch/fastapi/openai/ollama)
 - 2026-06-05 19:18 | PAS 0 | PROGRESS.md created
 - 2026-06-05 19:20 | PAS 0 | ✅ DONE — committed 0dc20f4, pushed to main (16/16). Write access to repo CONFIRMED.
+- 2026-06-05 19:25 | PAS 1 | Built VideoSource; webcam initially 10 FPS (DSHOW auto-exposure) → fixed via MSMF backend = 30.1 FPS
+- 2026-06-05 19:30 | PAS 1 | ✅ DONE — webcam 30.1 FPS, file 40/40 frames; committed 883a47b
 
 ## 🎓 Decision Log
 - **VLM model:** moondream (primary, fast, 1.7GB) + llama3.2-vision (fallback for hard SEMANTIC, 7.8GB). Replaces brief's `llava:7b` suggestion — both already pulled locally. User-approved.
