@@ -127,6 +127,10 @@ class AgentPipeline:
                 if frame is None:
                     time.sleep(0.05)
                     continue
+                if settings.FRAME_MAX_WIDTH and frame.shape[1] > settings.FRAME_MAX_WIDTH:
+                    h, w = frame.shape[:2]
+                    nh = int(h * settings.FRAME_MAX_WIDTH / w)
+                    frame = cv2.resize(frame, (settings.FRAME_MAX_WIDTH, nh))
                 now = time.time()
 
                 dets = self.detector.detect_and_track(frame)

@@ -26,6 +26,10 @@ class Settings:
     DETECTION_MODEL: str = os.environ.get("DETECTION_MODEL", "yolov8n.pt")
     POSE_MODEL: str = os.environ.get("POSE_MODEL", "yolov8n-pose.pt")
     DETECTION_CONFIDENCE: float = _f("DETECTION_CONFIDENCE", 0.5)
+    # Resize each captured frame to this width before detection/draw/encode.
+    # Lets you capture a sharp high-res stream (even 4K main) while keeping YOLO
+    # fast on CPU. 0 = no resize (use the native stream resolution).
+    FRAME_MAX_WIDTH: int = int(_f("FRAME_MAX_WIDTH", 0))
     VLM_MAX_FPS: float = _f("VLM_MAX_FPS", 1.0)
     DATABASE_URL: str = os.environ.get("DATABASE_URL", "sqlite:///watchful.db")
 
