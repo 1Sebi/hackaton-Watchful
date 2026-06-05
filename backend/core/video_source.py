@@ -6,12 +6,21 @@ manager. This is the single perception entry point for the whole agent loop.
 """
 from __future__ import annotations
 
+import os
 import sys
 import time
 from typing import Optional, Union
 
-import cv2
-import numpy as np
+# Harden RTSP transport: force TCP (not lossy UDP) + an 8s open/read timeout.
+# Must be set BEFORE cv2 is imported so FFmpeg picks it up — prevents UDP
+# artifacts ("PPS id out of range" on some HEVC cams) and infinite hangs on a
+# dead stream. (Validated against the live ThePlace NVRs.)
+os.environ.setdefault(
+    "OPENCV_FFMPEG_CAPTURE_OPTIONS", "rtsp_transport;tcp|stimeout;8000000"
+)
+
+import cv2  # noqa: E402
+import numpy as np  # noqa: E402
 
 
 class VideoSource:
@@ -80,6 +89,10 @@ class VideoSource:
             pass
         if not self._cap.isOpened():
             raise RuntimeError(f"VideoSource: could not open source {self.source!r}")
+        if self.is_rtsp:
+            # first ~3-5 frames are gray/partial until the decoder hits a keyframe
+            for _ in range(5):
+                self._cap.read()
 
     def release(self) -> None:
         if self._cap is not None:
