@@ -341,6 +341,13 @@ Checklist:
 - 2026-06-05 22:18 | PAS 15 | ✅ DONE — README+pitch+architecture, recorder, final webcam 2/2; committed cfc43c2, tag v1.0-demo-ready
 - 2026-06-05 22:18 | 🎉 BUILD COMPLETE — all 16 steps (PAS 0–15) done, 8 milestone tags, precision 100%
 
+### POST-v1.0 — Live on the real ThePlace NVR (tuning)
+- 2026-06-05 | LIVE | Connected to real Hikvision NVR (restaurant overhead). Two live issues: (1) view delayed/laggy, (2) only 1–2 of many diners detected.
+- 2026-06-05 | FIX-lag | VideoSource now runs a daemon **grabber thread** that keeps only the freshest frame (drops stale). read() no longer drains the FFmpeg buffer → latency can't accumulate; a slow detector only lowers box-update rate, picture stays current. Files still read on demand.
+- 2026-06-05 | FIX-detect | Balanced profile: `yolov8s` + `imgsz 960` + conf `0.40` (was yolov8n/640/0.5). Per branch real eval, yolov8n recall 0.60 (misses seated/distant) vs yolov8m@0.40 recall 1.00; imgsz is the small-person lever. Pose pass now **skipped** unless a pose condition is enabled (frees CPU for the detector). `DETECTION_IMGSZ` added to config/.env.
+- 2026-06-05 | FEAT-ntfy | Phone notifications via ntfy.sh. New `ntfy` action type: dispatcher builds `https://ntfy.sh/<NTFY_TOPIC>` (default topic `watchful-theplace-x9k2`), WebhookSender sends Title/Priority/Tags. Frontend dropdown gains "📱 ntfy phone". Generic alert text only — no footage/creds (public service).
+- 2026-06-05 | INTEGRATE | Cherry-picked (NOT merged — branch deleted the app) real-camera assets from `experiment/pose-handraise`: docs/REAL_CAMERA_ACCESS.md, docs/HIKVISION_RELAY.md, eval/CALIBRATION.md, real-data eval (ground_truth/results/run_eval), 9 validation scripts. **Sanitized real NVR passwords** out of script docstrings + a doc before staging.
+
 ## 🎓 Decision Log
 - **VLM model:** moondream (primary, fast, 1.7GB) + llama3.2-vision (fallback for hard SEMANTIC, 7.8GB). Replaces brief's `llava:7b` suggestion — both already pulled locally. User-approved.
 - **Python 3.13** instead of brief's 3.11 (machine has only 3.13/3.14). All ML wheels (torch 2.12, ultralytics 8.4.60, opencv 4.13) resolved cleanly. User-approved. Avoided 3.14 (wheel risk).
@@ -350,6 +357,10 @@ Checklist:
 - **Repo layout** — cloned into `Desktop/Hack/hackaton-Watchful/`; work happens inside the repo.
 - **Frontend uses Tailwind, not shadcn/ui** — shadcn's `init` is interactive (prompts), unfit for an autonomous run. Hand-styled dark-theme Tailwind components deliver the same polish with zero extra runtime deps. Diverges from brief's "Tailwind + shadcn".
 - **Compiler is hybrid (deterministic-first), not pure-VLM** — moondream is unreliable as a *text* compiler (malformed JSON, hallucinated structural types for semantic inputs). Deterministic EN+RO rules handle all genuine structural patterns; unmatched → templated SEMANTIC. VLM-compile (llama3.2-vision via compile_heavy) only *rescues* structural types. This guarantees 100% compile success and correct routing, still 100% local. Diverges from brief's "compile via Moondream" but honors its intent (VLM routing + visual_question) more robustly.
+- **Real-camera lag fix = grabber thread, not buffer tuning** — `CAP_PROP_BUFFERSIZE=1` is ignored by the FFMPEG backend, so on a live RTSP feed the consumer (slower than the stream) accumulates latency. A background thread that keeps only the newest frame decouples processing speed from latency once and for all, independent of resolution/model. This is what makes a heavier model usable on CPU: fewer box updates, never a delayed picture.
+- **Detection profile = Balanced (yolov8s/imgsz960/0.40), user-chosen** — machine is CPU-only. Branch's real eval proved recall is **model-size-bound** (yolov8n misses seated/distant diners regardless of threshold). yolov8s + imgsz 960 recovers most of them at a CPU-affordable rate; yolov8m (recall 1.0) is the `.env` upgrade path if the box can take it. Fallback ladder documented in `.env`.
+- **ntfy.sh as the notification channel** — shared team topic (`watchful-theplace-x9k2`) the phone app subscribes to, matching the teammate's setup. ntfy is public, so only generic alert text is sent. Reuses the already-built WebhookSender ntfy path; just added an `ntfy` action type + topic config + a frontend option.
+- **Do NOT merge `experiment/pose-handraise`** — that branch deleted the entire app (−7629 lines) to host a standalone real-camera validation lane. `main` already had hand-raise + ntfy. We cherry-pick only its validated docs/scripts and real-data eval, and sanitize the real NVR passwords its author left in script docstrings.
 
 ## 💡 Ideas (out of scope)
 - (nimic)
