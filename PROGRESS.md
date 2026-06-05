@@ -1,9 +1,9 @@
 # Watchful — Progress Log
 
 ## 📊 Current Status
-- **Last completed step:** PAS 11 - FastAPI Backend + Pipeline ✅
-- **Currently working on:** PAS 12 - Visualizer
-- **Last update:** 2026-06-05 21:25
+- **Last completed step:** PAS 12 - Visualizer ✅
+- **Currently working on:** PAS 13 - Frontend (React + Tailwind)
+- **Last update:** 2026-06-05 21:35
 - **Blockers:** none
 
 ## 🎯 Steps Overview
@@ -22,7 +22,7 @@
 | 9 | Database & Models | ✅ DONE | b0a65bb | CRUD 6/6 |
 | 10 | Action Dispatcher + Hikvision | ✅ DONE | 2489aae | 8/8 stand-in, tag v0.5 |
 | 11 | FastAPI Backend + Pipeline | ✅ DONE | 287d4a6 | live+TestClient 12/12 |
-| 12 | Visualizer | ⏳ TODO | - | - |
+| 12 | Visualizer | ✅ DONE | 6889e39 | all overlays verified |
 | 13 | Frontend (React + Tailwind) | ⏳ TODO | - | - |
 | 14 | Eval Set + Calibration | ⏳ TODO | - | - |
 | 15 | Polish + Demo Prep | ⏳ TODO | - | - |
@@ -248,18 +248,21 @@ Checklist:
 **Notes:** validated two ways — live uvicorn probes (REST/MJPEG/WS) + reproducible scripts/test_api.py TestClient **12/12**. Live loop ~13 FPS (det+pose+encode on CPU, single client). Added backend/config.py for centralized env.
 
 ### PAS 12: Visualizer
-**Status:** ⏳ TODO
+**Status:** ✅ DONE
+**Commit:** 6889e39
 
 Checklist:
-- [ ] backend/visualizer.py created
-- [ ] Bbox colored per track_id
-- [ ] Label "#ID Xs ✋" displayed
-- [ ] Skeleton from COCO pairs
-- [ ] Track trails alpha-fade
-- [ ] Zone polygons semi-transparent
-- [ ] HUD bar with stats
-- [ ] MJPEG shows all overlays
-- [ ] Commit + push done
+- [x] backend/visualizer.py created
+- [x] Bbox colored per track_id — 8-color palette
+- [x] Label "#ID Xs [HAND]" displayed (ASCII "HAND^" since cv2 can't render emoji)
+- [x] Skeleton from COCO pairs
+- [x] Track trails alpha-fade — addWeighted overlay
+- [x] Zone polygons semi-transparent — fillPoly + addWeighted, labeled
+- [x] HUD bar with stats — FPS/persons/conditions + LAST trigger bar
+- [x] MJPEG shows all overlays — pipeline auto-imports draw_overlay (verified)
+- [x] Commit + push done
+
+**Notes:** rendered proof eval/screenshots/visualizer.jpg — all 7 overlays present. Emoji not renderable in OpenCV Hershey fonts → "HAND^" ASCII marker.
 
 ### PAS 13: Frontend (React + Tailwind)
 **Status:** ⏳ TODO
@@ -323,6 +326,7 @@ Checklist:
 - 2026-06-05 20:48 | PAS 9 | ✅ DONE — SQLAlchemy Condition/Event/Zone, CRUD 6/6; committed b0a65bb
 - 2026-06-05 21:00 | PAS 10 | ✅ DONE — action dispatcher (relay/webhook/log) 8/8 stand-in; committed 2489aae, tag v0.5-actions
 - 2026-06-05 21:25 | PAS 11 | ✅ DONE — FastAPI backend + agent pipeline, live+TestClient 12/12; committed 287d4a6
+- 2026-06-05 21:35 | PAS 12 | ✅ DONE — visualizer (all overlays), pipeline auto-uses it; committed 6889e39
 
 ## 🎓 Decision Log
 - **VLM model:** moondream (primary, fast, 1.7GB) + llama3.2-vision (fallback for hard SEMANTIC, 7.8GB). Replaces brief's `llava:7b` suggestion — both already pulled locally. User-approved.
