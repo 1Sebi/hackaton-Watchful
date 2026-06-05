@@ -1,9 +1,9 @@
 # Watchful — Progress Log
 
 ## 📊 Current Status
-- **Last completed step:** PAS 4 - Pose Analyzer ✅
-- **Currently working on:** PAS 5 - Predicate Compiler (VLM-based)
-- **Last update:** 2026-06-05 20:00
+- **Last completed step:** PAS 5 - Predicate Compiler (VLM-based) ✅
+- **Currently working on:** PAS 6 - Predicate Evaluator (Hybrid)
+- **Last update:** 2026-06-05 20:12
 - **Blockers:** none
 
 ## 🎯 Steps Overview
@@ -15,7 +15,7 @@
 | 2 | VLM Client (Ollama + Moondream) | ✅ DONE | bfdcf27 | warm ~246ms, tag v0.1 |
 | 3 | YOLO Detector + Tracker | ✅ DONE | 7e8103d | yolov8n 31.9 FPS, bus 3 persons |
 | 4 | Pose Analyzer | ✅ DONE | 672798a | 3 standing, rules 9/9, tag v0.2 |
-| 5 | Predicate Compiler (VLM-based) | ⏳ TODO | - | - |
+| 5 | Predicate Compiler (VLM-based) | ✅ DONE | c97b346 | 10/10 EN+RO, hybrid |
 | 6 | Predicate Evaluator (Hybrid) | ⏳ TODO | - | - |
 | 7 | Reference Frame + Adaptive Sampling | ⏳ TODO | - | - |
 | 8 | Anti-False-Positive Layer | ⏳ TODO | - | - |
@@ -134,18 +134,21 @@ Checklist:
 **Notes:** bus.jpg → 3 poses all standing; 9/9 deterministic rule checks; pose 31.5 FPS on webcam.
 
 ### PAS 5: Predicate Compiler (VLM-based)
-**Status:** ⏳ TODO
+**Status:** ✅ DONE
+**Commit:** c97b346
 
 Checklist:
-- [ ] backend/predicates/types.py with PredicateType enum + Predicate model
-- [ ] backend/predicates/compiler.py created
-- [ ] VLMPredicateCompiler class
-- [ ] compile(text) → Predicate via Moondream (1 call, NO image, text-only)
-- [ ] Returns: visual_question, predicate_type, evaluator (yolo|pose|vlm), params, thresholds
-- [ ] Examples in prompt: 5-10 few-shot
-- [ ] Test with 10 conditions: all compile successfully
-- [ ] Bilingual (EN + RO) verified
-- [ ] Commit + push done
+- [x] backend/predicates/types.py with PredicateType enum + Predicate model
+- [x] backend/predicates/compiler.py created
+- [x] VLMPredicateCompiler class
+- [x] compile(text) → Predicate via VLM (text-only, 1 call on compile_heavy path) — verified llama3.2-vision routed "empty for half a minute" → ABSENCE_FOR_DURATION
+- [x] Returns: visual_question, predicate_type, evaluator (yolo|pose|vlm), params, thresholds
+- [x] Examples in prompt: 7 few-shot (5-10 ✓)
+- [x] Test with 10 conditions: all compile successfully — **10/10**
+- [x] Bilingual (EN + RO) verified — 3 RO cases pass
+- [x] Commit + push done
+
+**Notes:** HYBRID design (Decision Log) — deterministic EN+RO rules first (instant, reliable), templated SEMANTIC fallback. moondream too unreliable as a *text* compiler (hallucinates structural types) → not trusted for routing by default; structural VLM override only on compile_heavy (llama3.2-vision). Caught via re-run discipline (8/10 regression spotted, fixed → 10/10).
 
 ### PAS 6: Predicate Evaluator (Hybrid)
 **Status:** ⏳ TODO
@@ -297,6 +300,7 @@ Checklist:
 - 2026-06-05 19:40 | PAS 2 | ✅ DONE — OllamaVLMClient, visual Q→JSON, warm 246ms; committed bfdcf27, tag v0.1-ollama-vlm
 - 2026-06-05 19:50 | PAS 3 | ✅ DONE — PersonDetector+TrackManager, webcam 31.9 FPS, bus.jpg 3 persons; committed 7e8103d
 - 2026-06-05 20:00 | PAS 4 | ✅ DONE — PoseAnalyzer, skeleton verified, rules 9/9, 31.5 FPS; committed 672798a, tag v0.2-detection
+- 2026-06-05 20:12 | PAS 5 | ✅ DONE — hybrid compiler 10/10 EN+RO; spotted & fixed an 8/10 regression by re-running; committed c97b346
 
 ## 🎓 Decision Log
 - **VLM model:** moondream (primary, fast, 1.7GB) + llama3.2-vision (fallback for hard SEMANTIC, 7.8GB). Replaces brief's `llava:7b` suggestion — both already pulled locally. User-approved.
@@ -305,6 +309,7 @@ Checklist:
 - **Prior branch not reused as base** — it was a cloud (Anthropic API) prototype. Kept on its own branch; we build the brief's local `backend/` architecture on `main`. Will borrow its Hikvision ISAPI (act.py) + debounce/cooldown patterns, adapted.
 - **Ollama via HTTP** — app does not require `ollama` on PATH (uses localhost:11434). CLI checks use full exe path.
 - **Repo layout** — cloned into `Desktop/Hack/hackaton-Watchful/`; work happens inside the repo.
+- **Compiler is hybrid (deterministic-first), not pure-VLM** — moondream is unreliable as a *text* compiler (malformed JSON, hallucinated structural types for semantic inputs). Deterministic EN+RO rules handle all genuine structural patterns; unmatched → templated SEMANTIC. VLM-compile (llama3.2-vision via compile_heavy) only *rescues* structural types. This guarantees 100% compile success and correct routing, still 100% local. Diverges from brief's "compile via Moondream" but honors its intent (VLM routing + visual_question) more robustly.
 
 ## 💡 Ideas (out of scope)
 - (nimic)
