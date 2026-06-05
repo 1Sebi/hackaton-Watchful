@@ -18,6 +18,10 @@ from typing import Optional, Union
 os.environ.setdefault(
     "OPENCV_FFMPEG_CAPTURE_OPTIONS", "rtsp_transport;tcp|stimeout;8000000"
 )
+# Quiet FFmpeg's HEVC decoder chatter ("PPS id out of range", "Could not find ref
+# with POC") — harmless startup/keyframe warnings on some sub-streams; the agent
+# loop tolerates them. fatal-only so genuine failures still surface.
+os.environ.setdefault("OPENCV_FFMPEG_LOGLEVEL", "8")
 
 import cv2  # noqa: E402
 import numpy as np  # noqa: E402
