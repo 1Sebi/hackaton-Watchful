@@ -9,6 +9,10 @@ Security cameras see everything and understand nothing. Watchful lets you say
 looks distressed"* — in plain language — and the agent perceives, reasons, and
 acts. The hard part isn't detecting. It's **not firing on shadows.**
 
+![Watchful live overlay — tracked people, skeletons, zone, HUD](docs/images/watchful-demo.jpg)
+
+> **Measured:** precision **100%** · false-trigger rate **0.0%** · recall 90% · F1 94.7% on a 30-case eval (`eval/results.md`). Detection ~30 FPS (YOLOv8n, CPU); VLM warm ~250 ms (Moondream).
+
 ---
 
 ## 🔒 The promise: 100% local · 0 cost · 0 cloud
@@ -98,6 +102,20 @@ docs/          ARCHITECTURE · HIKVISION_ISAPI · PITCH_NOTES
 
 Build status lives in **[PROGRESS.md](PROGRESS.md)** — the persistent log of the
 16-step autonomous build (PAS 0 → PAS 15).
+
+## 🛡️ The hard part — low false-trigger rate
+
+Five mechanisms gate every action: confidence **threshold**, N-consecutive
+**debounce**, **cooldown**, **zone mask**, and **reference-frame** gating. On the
+30-case eval, **trap 10/10 and neutral 10/10 — zero false positives.** A shadow or
+one-frame flicker never fires.
+
+## 📚 Docs
+
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — agent loop + components
+- [docs/PITCH_NOTES.md](docs/PITCH_NOTES.md) — 5-minute pitch script
+- [docs/HIKVISION_ISAPI.md](docs/HIKVISION_ISAPI.md) — relay/ISAPI cheatsheet
+- [eval/results.md](eval/results.md) — precision/recall numbers
 
 ---
 
