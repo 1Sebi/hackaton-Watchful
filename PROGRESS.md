@@ -1,9 +1,9 @@
 # Watchful — Progress Log
 
 ## 📊 Current Status
-- **Last completed step:** PAS 12 - Visualizer ✅
-- **Currently working on:** PAS 13 - Frontend (React + Tailwind)
-- **Last update:** 2026-06-05 21:35
+- **Last completed step:** PAS 13 - Frontend (React + Tailwind) ✅
+- **Currently working on:** PAS 14 - Eval Set + Calibration
+- **Last update:** 2026-06-05 21:50
 - **Blockers:** none
 
 ## 🎯 Steps Overview
@@ -23,7 +23,7 @@
 | 10 | Action Dispatcher + Hikvision | ✅ DONE | 2489aae | 8/8 stand-in, tag v0.5 |
 | 11 | FastAPI Backend + Pipeline | ✅ DONE | 287d4a6 | live+TestClient 12/12 |
 | 12 | Visualizer | ✅ DONE | 6889e39 | all overlays verified |
-| 13 | Frontend (React + Tailwind) | ⏳ TODO | - | - |
+| 13 | Frontend (React + Tailwind) | ✅ DONE | a706530 | builds, E2E 2/2, tag v0.6 |
 | 14 | Eval Set + Calibration | ⏳ TODO | - | - |
 | 15 | Polish + Demo Prep | ⏳ TODO | - | - |
 
@@ -265,20 +265,23 @@ Checklist:
 **Notes:** rendered proof eval/screenshots/visualizer.jpg — all 7 overlays present. Emoji not renderable in OpenCV Hershey fonts → "HAND^" ASCII marker.
 
 ### PAS 13: Frontend (React + Tailwind)
-**Status:** ⏳ TODO
+**Status:** ✅ DONE
+**Commit:** a706530
 
 Checklist:
-- [ ] Vite + React + TS scaffold
-- [ ] Tailwind + shadcn installed
-- [ ] LiveView component (MJPEG + canvas overlay)
-- [ ] ConditionsList component
-- [ ] ConditionEditor component (with compiled preview)
-- [ ] EventLog component (WebSocket live)
-- [ ] ZoneDrawer component (canvas polygon)
-- [ ] StatusBar component
-- [ ] End-to-end test: add condition → see trigger in log
-- [ ] Tag v0.6-fullstack created
-- [ ] Commit + push done
+- [x] Vite + React + TS scaffold — builds (tsc + vite, 152kB/49kB gzip)
+- [x] Tailwind installed (shadcn → hand-rolled Tailwind components, see notes)
+- [x] LiveView component (MJPEG)
+- [x] ConditionsList component (toggle/delete)
+- [x] ConditionEditor component (with live compiled-predicate preview via /conditions/preview)
+- [x] EventLog component (WebSocket /ws/events + initial /events)
+- [x] ZoneDrawer component (canvas polygon → /zones, scaled to native coords)
+- [x] StatusBar component (WebSocket /ws/state)
+- [x] End-to-end test: add condition → see trigger in log — **scripts/test_e2e.py 2/2** (absence trigger fires + logged)
+- [x] Tag v0.6-fullstack created
+- [x] Commit + push done
+
+**Notes:** Deviation — used Tailwind v3.4 with hand-styled dark-theme components instead of shadcn/ui (shadcn init is interactive, unfit for autonomous run). Same visual quality, no extra runtime deps. node_modules/dist gitignored; package-lock committed.
 
 ### PAS 14: Eval Set + Calibration
 **Status:** ⏳ TODO
@@ -327,6 +330,7 @@ Checklist:
 - 2026-06-05 21:00 | PAS 10 | ✅ DONE — action dispatcher (relay/webhook/log) 8/8 stand-in; committed 2489aae, tag v0.5-actions
 - 2026-06-05 21:25 | PAS 11 | ✅ DONE — FastAPI backend + agent pipeline, live+TestClient 12/12; committed 287d4a6
 - 2026-06-05 21:35 | PAS 12 | ✅ DONE — visualizer (all overlays), pipeline auto-uses it; committed 6889e39
+- 2026-06-05 21:50 | PAS 13 | ✅ DONE — React+Tailwind dashboard, build green, E2E 2/2; committed a706530, tag v0.6-fullstack
 
 ## 🎓 Decision Log
 - **VLM model:** moondream (primary, fast, 1.7GB) + llama3.2-vision (fallback for hard SEMANTIC, 7.8GB). Replaces brief's `llava:7b` suggestion — both already pulled locally. User-approved.
@@ -335,6 +339,7 @@ Checklist:
 - **Prior branch not reused as base** — it was a cloud (Anthropic API) prototype. Kept on its own branch; we build the brief's local `backend/` architecture on `main`. Will borrow its Hikvision ISAPI (act.py) + debounce/cooldown patterns, adapted.
 - **Ollama via HTTP** — app does not require `ollama` on PATH (uses localhost:11434). CLI checks use full exe path.
 - **Repo layout** — cloned into `Desktop/Hack/hackaton-Watchful/`; work happens inside the repo.
+- **Frontend uses Tailwind, not shadcn/ui** — shadcn's `init` is interactive (prompts), unfit for an autonomous run. Hand-styled dark-theme Tailwind components deliver the same polish with zero extra runtime deps. Diverges from brief's "Tailwind + shadcn".
 - **Compiler is hybrid (deterministic-first), not pure-VLM** — moondream is unreliable as a *text* compiler (malformed JSON, hallucinated structural types for semantic inputs). Deterministic EN+RO rules handle all genuine structural patterns; unmatched → templated SEMANTIC. VLM-compile (llama3.2-vision via compile_heavy) only *rescues* structural types. This guarantees 100% compile success and correct routing, still 100% local. Diverges from brief's "compile via Moondream" but honors its intent (VLM routing + visual_question) more robustly.
 
 ## 💡 Ideas (out of scope)
