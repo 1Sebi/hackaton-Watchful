@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import sys
+import threading
 import time
 from typing import Optional, Union
 
@@ -46,7 +47,20 @@ class VideoSource:
         self.reconnect_delay = reconnect_delay
         self._cap: Optional[cv2.VideoCapture] = None
         self._reconnects = 0
+        # latest-frame buffer drained by a background grabber (live sources only)
+        self._latest: Optional[np.ndarray] = None
+        self._frame_lock = threading.Lock()
+        self._grab_thread: Optional[threading.Thread] = None
+        self._stop = threading.Event()
         self.open()
+        # For live sources (webcam/RTSP) a daemon thread continuously drains the
+        # capture and keeps ONLY the freshest frame, so read() never hands back a
+        # stale queued frame -> latency can't accumulate even when the consumer
+        # (detector) is slower than the stream. Files are read on demand so their
+        # playback pacing / EOF semantics are preserved.
+        if not self.is_file:
+            self._grab_thread = threading.Thread(target=self._grab_loop, daemon=True)
+            self._grab_thread.start()
 
     # ── helpers ──────────────────────────────────────────────────────────
     @staticmethod
@@ -99,6 +113,10 @@ class VideoSource:
                 self._cap.read()
 
     def release(self) -> None:
+        self._stop.set()
+        t = self._grab_thread
+        if t is not None and t.is_alive():
+            t.join(timeout=2.0)
         if self._cap is not None:
             self._cap.release()
             self._cap = None
@@ -120,30 +138,50 @@ class VideoSource:
 
     # ── frame access ─────────────────────────────────────────────────────
     def read(self) -> Optional[np.ndarray]:
-        """Return the latest BGR frame, or ``None`` if exhausted/unrecoverable."""
-        if self._cap is None:
-            return None
-        ok, frame = self._cap.read()
-        if ok and frame is not None:
-            self._reconnects = 0
-            return frame
-        # transient failure (RTSP drop) -> bounded reconnect. For files, EOF.
-        if self.is_file:
-            return None
-        return self._reconnect_and_read()
+        """Return the freshest BGR frame, or ``None`` if not ready/exhausted.
 
-    def _reconnect_and_read(self) -> Optional[np.ndarray]:
-        while self._reconnects < self.max_reconnect:
+        Files are read on demand (preserves pacing + EOF). Live sources hand
+        back whatever the background grabber last captured — never a stale
+        queued frame — so the consumer always sees *now*.
+        """
+        if self.is_file:
+            if self._cap is None:
+                return None
+            ok, frame = self._cap.read()
+            return frame if ok and frame is not None else None
+        with self._frame_lock:
+            return self._latest
+
+    def _grab_loop(self) -> None:
+        """Continuously drain the capture, keeping only the newest frame."""
+        while not self._stop.is_set():
+            cap = self._cap
+            if cap is None:
+                if not self._try_reopen():
+                    break
+                continue
+            ok, frame = cap.read()
+            if ok and frame is not None:
+                self._reconnects = 0
+                with self._frame_lock:
+                    self._latest = frame
+                continue
+            # transient failure (RTSP drop) -> bounded reconnect
+            if not self._try_reopen():
+                break
+
+    def _try_reopen(self) -> bool:
+        """Bounded reconnect for a dropped live stream. ``False`` when exhausted."""
+        while self._reconnects < self.max_reconnect and not self._stop.is_set():
             self._reconnects += 1
-            time.sleep(self.reconnect_delay)
+            if self._stop.wait(self.reconnect_delay):
+                return False  # released mid-wait
             try:
                 self.open()
+                return True
             except RuntimeError:
                 continue
-            ok, frame = self._cap.read()
-            if ok and frame is not None:
-                return frame
-        return None
+        return False
 
     # ── context manager ──────────────────────────────────────────────────
     def __enter__(self) -> "VideoSource":

@@ -15,6 +15,7 @@ from typing import Optional
 from backend.actions.hikvision import HikvisionClient
 from backend.actions.logger import EventLogger
 from backend.actions.webhook import WebhookSender
+from backend.config import settings
 
 
 class ActionDispatcher:
@@ -41,6 +42,23 @@ class ActionDispatcher:
                     action.get("state", "high"), action.get("duration"),
                 )
                 return {"type": "relay", "ok": ok}
+            if kind == "ntfy":
+                # phone push via ntfy.sh. URL = explicit override, else the
+                # configured topic. Generic text only — no footage/credentials.
+                topic = action.get("topic") or settings.NTFY_TOPIC
+                url = action.get("url") or (
+                    f"{settings.NTFY_BASE_URL.rstrip('/')}/{topic}" if topic else None
+                )
+                if not url:
+                    return {"type": "ntfy", "ok": False, "error": "no ntfy topic configured"}
+                conf = ctx.get("confidence")
+                body = message if conf is None else f"{message} (conf {float(conf):.2f})"
+                wh = WebhookSender(url=url, kind="ntfy")
+                ok = await asyncio.to_thread(
+                    wh.send, body, action.get("title", "⚠️ Watchful"), url,
+                    action.get("priority", "high"), action.get("tags", "warning"),
+                )
+                return {"type": "ntfy", "ok": ok}
             if kind == "webhook":
                 wh = self.webhook or WebhookSender(url=action.get("url"), kind=action.get("kind", "generic"))
                 ok = await asyncio.to_thread(wh.send, message, action.get("title", "Watchful"), action.get("url"))

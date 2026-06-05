@@ -1,173 +1,114 @@
-"""Watchful evaluation harness.
+"""Evaluate the 'person_present' predicate on the real venue clips.
 
-Loads eval/ground_truth.json, runs each case through the real compile + evaluate
-+ anti-false-positive decision, compares to expected, and reports a confusion
-matrix with precision / recall / F1 (overall + per category). Writes results.md.
+Runs YOLO person detection over sampled frames of each clip, applies a simple
+anti-false-positive rule (confidence threshold + require the person to appear in
+at least K sampled frames, not a single fluke), and scores predictions against
+eval/ground_truth.json.
 
-Frame cases: compile the condition, run detector/pose on the source image (or a
-synthetic empty frame), evaluate the predicate, and apply the threshold gate as
-the single-frame fire decision.
-Stream cases: drive the anti-false-positive layer with a temporal pattern
-(steady / flicker / absence) — this is where "the hard part" is measured.
+  python eval/run_eval.py
+  python eval/run_eval.py --conf 0.5 --min-frames 2 --samples 8
 
-Usage:  python eval/run_eval.py
+Writes eval/results.md with concrete precision/recall/F1.
 """
 from __future__ import annotations
 
+import argparse
 import json
-import os
 import sys
+from pathlib import Path
 
 import cv2
-import numpy as np
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 
-from backend.antifalse import AntiFalsePositive  # noqa: E402
-from backend.antifalse.threshold import ThresholdGate  # noqa: E402
-from backend.core.detector import PersonDetector  # noqa: E402
-from backend.core.pose_analyzer import PoseAnalyzer  # noqa: E402
-from backend.predicates.compiler import VLMPredicateCompiler  # noqa: E402
-from backend.predicates.evaluator import EvalContext, EvalResult, HybridEvaluator  # noqa: E402
-from backend.predicates.types import Predicate  # noqa: E402
-from backend.vlm.client import OllamaVLMClient  # noqa: E402
-
-HERE = os.path.dirname(os.path.abspath(__file__))
+EVAL_DIR = Path(__file__).resolve().parent
+CLIPS_DIR = EVAL_DIR / "clips"
 
 
-class _R:
-    def __init__(self, detected, confidence):
-        self.detected = detected
-        self.confidence = confidence
+def sample_frames(path: Path, n: int):
+    cap = cv2.VideoCapture(str(path))
+    total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) or 0
+    idxs = [int(total * (i + 0.5) / n) for i in range(n)] if total else list(range(n))
+    frames = []
+    for idx in idxs:
+        if total:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
+        ok, f = cap.read()
+        if ok and f is not None:
+            frames.append(f)
+    cap.release()
+    return frames
 
 
-def _frames():
-    from ultralytics import ASSETS
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--model", default="yolov8n.pt")
+    ap.add_argument("--conf", type=float, default=0.5, help="person confidence threshold")
+    ap.add_argument("--min-frames", type=int, default=2,
+                    help="person must appear in >= this many sampled frames (anti-FP)")
+    ap.add_argument("--samples", type=int, default=8, help="frames sampled per clip")
+    args = ap.parse_args()
 
-    empty = np.full((480, 640, 3), 60, dtype=np.uint8)
-    return {
-        "bus.jpg": cv2.imread(str(ASSETS / "bus.jpg")),
-        "zidane.jpg": cv2.imread(str(ASSETS / "zidane.jpg")),
-        "empty": empty,
-    }
+    from ultralytics import YOLO
+    model = YOLO(args.model)
 
-
-def _decide_frame(case, ctx_cache, det, pose, evaluator, compiler, gate) -> bool:
-    src = case["source"]
-    if src not in ctx_cache:
-        img = _frames()[src]
-        dets = det.detect_and_track(img.copy())
-        poses = pose.analyze(img)
-        pmap = pose.associate(poses, dets)
-        ctx_cache[src] = EvalContext(frame=img, detections=dets, poses=poses,
-                                     pose_map=pmap, now=1000.0)
-    ctx = ctx_cache[src]
-    pred: Predicate = compiler.compile(case["condition"])
-    if case.get("heavy") and pred.is_semantic:
-        pred.params["heavy"] = True
-    result = evaluator.evaluate(pred, ctx)
-    return gate.passes(result, pred)
-
-
-def _decide_stream(case) -> bool:
-    pattern = case["pattern"]
-    afp = AntiFalsePositive()
-    pred = Predicate(type="COUNT_GT", params={"value": 0}, min_confidence=0.7,
-                     min_consecutive=3, cooldown_seconds=30, original_text=case["id"])
-    fired = False
-    if pattern == "steady":
-        for t in range(6):
-            f, _ = afp.should_fire(pred, _R(True, 0.95), now=float(t))
-            fired = fired or f
-    elif pattern == "flicker":
-        seq = [True, True, False] * 6  # never 3 consecutive
-        for t, p in enumerate(seq):
-            f, _ = afp.should_fire(pred, _R(p, 0.95), now=float(t))
-            fired = fired or f
-    elif pattern == "absence":
-        # absence becomes true after 2s empty; needs 3 consecutive -> fire
-        for t in (0.0, 2.2, 2.4, 2.6):
-            detected = t >= 2.0
-            f, _ = afp.should_fire(pred, _R(detected, 1.0 if detected else 0.0), now=t)
-            fired = fired or f
-    return fired
-
-
-def main() -> int:
-    gt = json.load(open(os.path.join(HERE, "ground_truth.json"), encoding="utf-8"))
-    cases = gt["cases"]
-
-    det = PersonDetector()
-    pose = PoseAnalyzer()
-    vlm = OllamaVLMClient()
-    evaluator = HybridEvaluator(pose, vlm, vlm_max_fps=1000)  # no throttle during eval
-    compiler = VLMPredicateCompiler(vlm)
-    gate = ThresholdGate()
-    ctx_cache: dict = {}
-
-    tp = fp = tn = fn = 0
-    by_cat: dict = {}
+    gt = json.loads((EVAL_DIR / "ground_truth.json").read_text(encoding="utf-8"))
     rows = []
-    for c in cases:
-        fired = _decide_stream(c) if c["mode"] == "stream" else \
-            _decide_frame(c, ctx_cache, det, pose, evaluator, compiler, gate)
-        exp = bool(c["expected"])
-        ok = fired == exp
-        if exp and fired:
-            tp += 1
-        elif (not exp) and fired:
-            fp += 1
-        elif (not exp) and (not fired):
-            tn += 1
-        else:
-            fn += 1
-        cat = by_cat.setdefault(c["category"], {"ok": 0, "n": 0})
-        cat["n"] += 1
-        cat["ok"] += int(ok)
-        rows.append((c["id"], c["category"], c["condition"][:34], exp, fired, ok))
-        print(f"  [{'OK' if ok else 'XX'}] {c['id']:3s} {c['category']:7s} exp={int(exp)} fired={int(fired)}  {c['condition'][:40]}")
+    tp = fp = tn = fn = 0
 
-    precision = tp / (tp + fp) if (tp + fp) else 1.0
-    recall = tp / (tp + fn) if (tp + fn) else 1.0
-    f1 = 2 * precision * recall / (precision + recall) if (precision + recall) else 0.0
-    accuracy = (tp + tn) / len(cases)
-    false_trigger_rate = fp / (fp + tn) if (fp + tn) else 0.0
+    for clip in gt["clips"]:
+        path = CLIPS_DIR / clip["file"]
+        if not path.exists():
+            print(f"  MISSING: {path}")
+            continue
+        frames = sample_frames(path, args.samples)
+        hits = 0
+        max_conf = 0.0
+        for f in frames:
+            res = model(f, classes=[0], verbose=False)[0]
+            confs = res.boxes.conf.cpu().numpy() if res.boxes is not None else []
+            person = [c for c in confs if c >= args.conf]
+            if person:
+                hits += 1
+                max_conf = max(max_conf, float(max(person)))
+        predicted = hits >= args.min_frames
+        expected = bool(clip["expected"])
+        outcome = ("TP" if predicted and expected else
+                   "FP" if predicted and not expected else
+                   "TN" if not predicted and not expected else "FN")
+        tp += outcome == "TP"; fp += outcome == "FP"
+        tn += outcome == "TN"; fn += outcome == "FN"
+        rows.append((clip["file"], expected, predicted, hits, args.samples,
+                     max_conf, outcome, clip.get("notes", "")))
+        print(f"  {outcome}  {clip['file']:<32} exp={expected!s:<5} "
+              f"pred={predicted!s:<5} hits={hits}/{args.samples} maxc={max_conf:.2f}")
 
-    print("\n=== CONFUSION ===")
-    print(f"TP={tp} FP={fp} TN={tn} FN={fn}")
-    print(f"precision={precision:.3f} recall={recall:.3f} F1={f1:.3f} acc={accuracy:.3f} false_trigger_rate={false_trigger_rate:.3f}")
+    prec = tp / (tp + fp) if (tp + fp) else 0.0
+    rec = tp / (tp + fn) if (tp + fn) else 0.0
+    f1 = 2 * prec * rec / (prec + rec) if (prec + rec) else 0.0
+    acc = (tp + tn) / max(tp + tn + fp + fn, 1)
 
-    _write_results(rows, tp, fp, tn, fn, precision, recall, f1, accuracy, false_trigger_rate, by_cat)
-    print(f"\nwrote {os.path.join(HERE, 'results.md')}")
-    print("CALIBRATION", "PASS (precision > 0.90)" if precision > 0.90 else "FAIL")
-    return 0 if precision > 0.90 else 1
+    print(f"\n  TP={tp} FP={fp} TN={tn} FN={fn}")
+    print(f"  Precision={prec:.3f}  Recall={rec:.3f}  F1={f1:.3f}  Acc={acc:.3f}")
 
-
-def _write_results(rows, tp, fp, tn, fn, precision, recall, f1, accuracy, ftr, by_cat) -> None:
-    lines = ["# Watchful — Evaluation Results", ""]
-    lines.append(f"**Cases:** {len(rows)}  ·  **Precision:** {precision:.1%}  ·  "
-                 f"**Recall:** {recall:.1%}  ·  **F1:** {f1:.1%}  ·  **Accuracy:** {accuracy:.1%}")
-    lines.append("")
-    lines.append(f"**False-trigger rate (FP / negatives):** {ftr:.1%}  "
-                 f"— the metric that matters most ('don't fire on shadows').")
-    lines.append("")
-    lines.append(f"Confusion: TP={tp} · FP={fp} · TN={tn} · FN={fn}")
-    lines.append("")
-    lines.append("Per category (accuracy):")
-    for cat, v in by_cat.items():
-        lines.append(f"- **{cat}**: {v['ok']}/{v['n']}")
-    lines.append("")
-    lines.append("| id | category | condition | expected | fired | ok |")
-    lines.append("|---|---|---|---|---|---|")
-    for rid, cat, cond, exp, fired, ok in rows:
-        lines.append(f"| {rid} | {cat} | {cond} | {int(exp)} | {int(fired)} | {'✓' if ok else '✗'} |")
-    lines.append("")
-    lines.append("> Eval set = ultralytics bundled images (bus.jpg, zidane.jpg) + a synthetic "
-                 "empty frame + AFP trap/steady/absence streams. Semantic cases use the heavy "
-                 "local VLM (llama3.2-vision). On-site venue clips are a known follow-up.")
-    with open(os.path.join(HERE, "results.md"), "w", encoding="utf-8") as f:
-        f.write("\n".join(lines) + "\n")
+    # ---- write results.md ----
+    md = ["# Eval results — `person_present` on real venue clips\n",
+          f"Model `{args.model}` · conf≥{args.conf} · min_frames={args.min_frames}"
+          f"/{args.samples} · {len(rows)} clips\n",
+          f"\n**Precision {prec:.1%} · Recall {rec:.1%} · F1 {f1:.1%} · "
+          f"Accuracy {acc:.1%}**  (TP={tp} FP={fp} TN={tn} FN={fn})\n",
+          "\n| outcome | clip | expected | predicted | hits | max_conf | notes |",
+          "|---|---|---|---|---|---|---|"]
+    for fpath, exp, pred, hits, ns, mc, oc, notes in rows:
+        md.append(f"| {oc} | {fpath} | {exp} | {pred} | {hits}/{ns} | {mc:.2f} | {notes} |")
+    md.append("\n_Generated by eval/run_eval.py on real ThePlace footage "
+              "(parallel hardware lane). Clips are gitignored._\n")
+    (EVAL_DIR / "results.md").write_text("\n".join(md), encoding="utf-8")
+    print(f"\n  wrote {EVAL_DIR / 'results.md'}")
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()

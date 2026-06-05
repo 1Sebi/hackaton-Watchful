@@ -52,6 +52,7 @@ export default function ConditionEditor({ onAdded }: { onAdded: () => void }) {
           className="rounded-lg border border-edge bg-ink px-2 py-1.5 text-sm"
         >
           <option value="log">Log</option>
+          <option value="ntfy">📱 ntfy phone</option>
           <option value="webhook">Webhook</option>
           <option value="relay">Relay</option>
         </select>

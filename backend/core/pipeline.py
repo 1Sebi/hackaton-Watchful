@@ -134,14 +134,22 @@ class AgentPipeline:
                 now = time.time()
 
                 dets = self.detector.detect_and_track(frame)
-                poses = self.pose.analyze(frame)
-                pose_map = self.pose.associate(poses, dets)
                 self.tracker.update(dets, now)
-                run_vlm = self.sampler.should_run_vlm(frame, now)
 
                 with self._lock:
                     zones = dict(self._zones)
                     conditions = list(self._conditions)
+
+                # Pose estimation is a second YOLO pass — only pay for it when a
+                # pose predicate (e.g. hand-raise) is actually enabled. A pure
+                # "count people" demo then leaves the whole CPU to the detector.
+                need_pose = any(
+                    c["enabled"] and c["predicate"].evaluator == "pose" for c in conditions
+                )
+                poses = self.pose.analyze(frame) if need_pose else []
+                pose_map = self.pose.associate(poses, dets) if need_pose else {}
+                run_vlm = self.sampler.should_run_vlm(frame, now)
+
                 ctx = EvalContext(frame=frame, detections=dets, poses=poses,
                                   pose_map=pose_map, tracks=self.tracker.tracks,
                                   zones=zones, now=now)

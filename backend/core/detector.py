@@ -57,6 +57,10 @@ class PersonDetector:
     ) -> None:
         self.model_path = model_path or _env("DETECTION_MODEL", "yolov8n.pt")
         self.conf = float(conf if conf is not None else _env("DETECTION_CONFIDENCE", "0.5"))
+        # Inference letterbox size. Larger = small/distant people keep enough
+        # pixels to be detected (the dominant recall lever on wide overhead
+        # shots). Must be a multiple of 32. 640 = YOLO default; 960 recommended.
+        self.imgsz = int(_env("DETECTION_IMGSZ", "960"))
         self.tracker = tracker
         self.model = YOLO(self.model_path)
 
@@ -82,6 +86,7 @@ class PersonDetector:
             persist=True,
             classes=[0],
             conf=self.conf,
+            imgsz=self.imgsz,
             verbose=False,
             tracker=self.tracker,
         )
@@ -91,7 +96,7 @@ class PersonDetector:
 
     def detect(self, frame: np.ndarray) -> List[Detection]:
         """Plain detection (no tracking); ``track_id`` is ``None``."""
-        results = self.model.predict(frame, classes=[0], conf=self.conf, verbose=False)
+        results = self.model.predict(frame, classes=[0], conf=self.conf, imgsz=self.imgsz, verbose=False)
         if not results:
             return []
         return self._boxes_to_detections(results[0])
