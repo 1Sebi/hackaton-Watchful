@@ -1,9 +1,9 @@
 # Watchful — Progress Log
 
 ## 📊 Current Status
-- **Last completed step:** PAS 2 - VLM Client (Ollama + Moondream) ✅
-- **Currently working on:** PAS 3 - YOLO Detector + Tracker
-- **Last update:** 2026-06-05 19:40
+- **Last completed step:** PAS 3 - YOLO Detector + Tracker ✅
+- **Currently working on:** PAS 4 - Pose Analyzer
+- **Last update:** 2026-06-05 19:50
 - **Blockers:** none
 
 ## 🎯 Steps Overview
@@ -13,7 +13,7 @@
 | 0 | Setup repo + Ollama + environment | ✅ DONE | 0dc20f4 | Py3.13, moondream+llama3.2-vision |
 | 1 | Video Source abstraction | ✅ DONE | 883a47b | webcam 30.1 FPS (MSMF) |
 | 2 | VLM Client (Ollama + Moondream) | ✅ DONE | bfdcf27 | warm ~246ms, tag v0.1 |
-| 3 | YOLO Detector + Tracker | ⏳ TODO | - | - |
+| 3 | YOLO Detector + Tracker | ✅ DONE | 7e8103d | yolov8n 31.9 FPS, bus 3 persons |
 | 4 | Pose Analyzer | ⏳ TODO | - | - |
 | 5 | Predicate Compiler (VLM-based) | ⏳ TODO | - | - |
 | 6 | Predicate Evaluator (Hybrid) | ⏳ TODO | - | - |
@@ -99,19 +99,22 @@ Checklist:
 **Notes:** moundream warm latency ~250ms — excellent for the loop. moondream undercounts people (count via VLM weak) → counting routed to YOLO by design (PAS 3/6). heavy=True switches to llama3.2-vision for hard semantic conditions.
 
 ### PAS 3: YOLO Detector + Tracker
-**Status:** ⏳ TODO
+**Status:** ✅ DONE
+**Commit:** 7e8103d
 
 Checklist:
-- [ ] backend/core/detector.py with PersonDetector
-- [ ] Loads yolov8m.pt (or yolov8n.pt if CPU too slow)
-- [ ] detect_and_track returns List[Detection]
-- [ ] Uses model.track persist=True classes=[0]
-- [ ] Verbose suppressed
-- [ ] backend/core/tracker.py with TrackManager
-- [ ] Positions deque, duration, prune, active_count
-- [ ] Visual test: bboxes + IDs persist
-- [ ] FPS >= 15 measured
-- [ ] Commit + push done
+- [x] backend/core/detector.py with PersonDetector
+- [x] Loads yolov8n.pt — **yolov8m=2 FPS on CPU (unusable) → yolov8n=31.9 FPS**
+- [x] detect_and_track returns List[Detection]
+- [x] Uses model.track persist=True classes=[0]
+- [x] Verbose suppressed
+- [x] backend/core/tracker.py with TrackManager
+- [x] Positions deque, duration, prune, active_count — deterministic test passed
+- [x] Visual test: bboxes + IDs persist — bus.jpg 3 persons (0.83-0.87), annotated image verified, ids {1,2,3} stable across 5 frames
+- [x] FPS >= 15 measured — **31.9 FPS** on webcam
+- [x] Commit + push done
+
+**Notes:** Default model → yolov8n.pt (CPU). Visual person test uses Ultralytics' bundled ASSETS/bus.jpg (local, zero network). Annotated proof at eval/screenshots/detector_bus.jpg (gitignored).
 
 ### PAS 4: Pose Analyzer
 **Status:** ⏳ TODO
@@ -289,6 +292,7 @@ Checklist:
 - 2026-06-05 19:25 | PAS 1 | Built VideoSource; webcam initially 10 FPS (DSHOW auto-exposure) → fixed via MSMF backend = 30.1 FPS
 - 2026-06-05 19:30 | PAS 1 | ✅ DONE — webcam 30.1 FPS, file 40/40 frames; committed 883a47b
 - 2026-06-05 19:40 | PAS 2 | ✅ DONE — OllamaVLMClient, visual Q→JSON, warm 246ms; committed bfdcf27, tag v0.1-ollama-vlm
+- 2026-06-05 19:50 | PAS 3 | ✅ DONE — PersonDetector+TrackManager, webcam 31.9 FPS, bus.jpg 3 persons; committed 7e8103d
 
 ## 🎓 Decision Log
 - **VLM model:** moondream (primary, fast, 1.7GB) + llama3.2-vision (fallback for hard SEMANTIC, 7.8GB). Replaces brief's `llava:7b` suggestion — both already pulled locally. User-approved.
