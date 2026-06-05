@@ -1,9 +1,9 @@
 # Watchful — Progress Log
 
 ## 📊 Current Status
-- **Last completed step:** PAS 14 - Eval Set + Calibration ✅
-- **Currently working on:** PAS 15 - Polish + Demo Prep
-- **Last update:** 2026-06-05 22:05
+- **Last completed step:** PAS 15 - Polish + Demo Prep ✅ — **BUILD COMPLETE (PAS 0–15)**
+- **Currently working on:** none — v1.0-demo-ready
+- **Last update:** 2026-06-05 22:18
 - **Blockers:** none
 
 ## 🎯 Steps Overview
@@ -25,7 +25,7 @@
 | 12 | Visualizer | ✅ DONE | 6889e39 | all overlays verified |
 | 13 | Frontend (React + Tailwind) | ✅ DONE | a706530 | builds, E2E 2/2, tag v0.6 |
 | 14 | Eval Set + Calibration | ✅ DONE | 0f4cf16 | precision 100%, FP 0, tag v0.9 |
-| 15 | Polish + Demo Prep | ⏳ TODO | - | - |
+| 15 | Polish + Demo Prep | ✅ DONE | cfc43c2 | docs+recorder, final 2/2, tag v1.0 |
 
 **Legend:** ⏳ TODO | 🚧 IN PROGRESS | ✅ DONE | ⚠️ BLOCKED | ⏭️ SKIPPED
 
@@ -300,17 +300,20 @@ Checklist:
 **Notes:** trap 10/10 + neutral 10/10 = ZERO false positives ("the hard part" proven). 1 FN (T8 semantic "is there a bus" — conservative VLM threshold; errs toward not-firing, consistent with low-FP design). On-site venue clips = follow-up.
 
 ### PAS 15: Polish + Demo Prep
-**Status:** ⏳ TODO
+**Status:** ✅ DONE
+**Commit:** cfc43c2
 
 Checklist:
-- [ ] README.md complete with screenshots
-- [ ] docs/PITCH_NOTES.md with 5-min structure
-- [ ] Demo rehearsed 3x with stopwatch
-- [ ] Backup demo video 60s recorded
-- [ ] Final test on webcam (2 conditions work)
-- [ ] (If access) Final test on Hikvision
-- [ ] Tag v1.0-demo-ready created
-- [ ] Commit + push done
+- [x] README.md complete with screenshots — hero overlay + measured numbers + docs links
+- [x] docs/PITCH_NOTES.md with 5-min structure — + docs/ARCHITECTURE.md
+- [~] Demo rehearsed 3x with stopwatch — **manual** (pitch script ready; can't rehearse autonomously)
+- [~] Backup demo video 60s recorded — recorder built + verified (scripts/record_demo.py, 85f mp4); real 60s-with-actor = manual pre-demo step
+- [x] Final test on webcam (2 conditions work) — **2/2** (absence fires, count stays quiet — no false trigger)
+- [~] (If access) Final test on Hikvision — **no device available** (ISAPI verified vs stand-in in PAS 10)
+- [x] Tag v1.0-demo-ready created
+- [x] Commit + push done
+
+**Notes:** 5 of 8 fully automated; 3 require a human/hardware (rehearsal, actor video, Hikvision) — tooling + scripts provided for all.
 
 ## 📝 Activity Log
 - 2026-06-05 19:10 | PAS 0 | Started setup; cloned repo, inspected main (only README) + prior branch
@@ -335,6 +338,8 @@ Checklist:
 - 2026-06-05 21:35 | PAS 12 | ✅ DONE — visualizer (all overlays), pipeline auto-uses it; committed 6889e39
 - 2026-06-05 21:50 | PAS 13 | ✅ DONE — React+Tailwind dashboard, build green, E2E 2/2; committed a706530, tag v0.6-fullstack
 - 2026-06-05 22:05 | PAS 14 | ✅ DONE — eval 30 cases, precision 100% / FP 0 / FTR 0%; committed 0f4cf16, tag v0.9-eval-ready
+- 2026-06-05 22:18 | PAS 15 | ✅ DONE — README+pitch+architecture, recorder, final webcam 2/2; committed cfc43c2, tag v1.0-demo-ready
+- 2026-06-05 22:18 | 🎉 BUILD COMPLETE — all 16 steps (PAS 0–15) done, 8 milestone tags, precision 100%
 
 ## 🎓 Decision Log
 - **VLM model:** moondream (primary, fast, 1.7GB) + llama3.2-vision (fallback for hard SEMANTIC, 7.8GB). Replaces brief's `llava:7b` suggestion — both already pulled locally. User-approved.
