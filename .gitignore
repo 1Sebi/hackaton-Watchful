@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+
+# Models (auto-downloaded)
+*.pt
+*.onnx
+*.gguf
+
+# Environment
+.env
+.env.local
+
+# Database
+*.db
+*.sqlite
+
+# Logs
+*.log
+events.jsonl
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node
+node_modules/
+dist/
+build/
+
+# Eval
+eval/clips/*.mp4
+eval/clips/*.avi
+eval/screenshots/
+
+# Ollama models (descarcate de Ollama in ~/.ollama, nu in repo)
