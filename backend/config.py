@@ -1,0 +1,33 @@
+"""Central configuration — reads .env once and exposes typed settings."""
+from __future__ import annotations
+
+import os
+
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv()
+except Exception:
+    pass
+
+
+def _f(key: str, default: float) -> float:
+    try:
+        return float(os.environ.get(key, default))
+    except (TypeError, ValueError):
+        return default
+
+
+class Settings:
+    VIDEO_SOURCE: str = os.environ.get("VIDEO_SOURCE", "0")
+    OLLAMA_BASE_URL: str = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
+    VLM_MODEL: str = os.environ.get("VLM_MODEL", "moondream")
+    VLM_MODEL_HEAVY: str = os.environ.get("VLM_MODEL_HEAVY", "llama3.2-vision")
+    DETECTION_MODEL: str = os.environ.get("DETECTION_MODEL", "yolov8n.pt")
+    POSE_MODEL: str = os.environ.get("POSE_MODEL", "yolov8n-pose.pt")
+    DETECTION_CONFIDENCE: float = _f("DETECTION_CONFIDENCE", 0.5)
+    VLM_MAX_FPS: float = _f("VLM_MAX_FPS", 1.0)
+    DATABASE_URL: str = os.environ.get("DATABASE_URL", "sqlite:///watchful.db")
+
+
+settings = Settings()
