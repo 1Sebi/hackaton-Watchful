@@ -1,8 +1,8 @@
 """Grab a sub-stream thumbnail from each camera on an NVR and tile them into a
 single contact-sheet image, so we can eyeball all the angles at once.
 
-  python scripts/contact_sheet.py --ip 192.168.0.60 --password "@WallySpeed2105$" --cams 1-16
-  python scripts/contact_sheet.py --ip 192.168.0.59 --password "2020@Doina" --cams 1-8
+  python scripts/contact_sheet.py --ip 192.168.0.60 --password "<NVR2_PASS>" --cams 1-16
+  python scripts/contact_sheet.py --ip 192.168.0.59 --password "<NVR1_PASS>" --cams 1-8
 """
 from __future__ import annotations
 

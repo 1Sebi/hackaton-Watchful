@@ -3,8 +3,8 @@
 Credentials are passed as args (never hard-coded / committed). Passwords with
 @ : / $ etc. are URL-encoded automatically.
 
-  python scripts/probe_rtsp.py --ip 192.168.0.59 --user admin --password "2020@Doina"
-  python scripts/probe_rtsp.py --ip 192.168.0.60 --user admin --password "@WallySpeed2105$" --channel 1 --stream sub
+  python scripts/probe_rtsp.py --ip 192.168.0.59 --user admin --password "<NVR1_PASS>"
+  python scripts/probe_rtsp.py --ip 192.168.0.60 --user admin --password "<NVR2_PASS>" --channel 1 --stream sub
 
 Hikvision channel id = camera*100 + stream  (stream: 1=main, 2=sub).
 Saves the captured frame to snapshots/<ip>_ch<n>.jpg (gitignored).

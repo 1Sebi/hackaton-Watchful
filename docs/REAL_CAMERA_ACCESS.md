@@ -68,7 +68,7 @@ continuous agent loop, but any *snapshot* endpoint (e.g. `/stream` thumbnail,
 predicate-compiler preview) should warm up: discard the first ~10 frames.
 
 **4.2 URL-encode the password.** Passwords contain `@` and `$` →
-`@`→`%40`, `$`→`%24`. e.g. `@WallySpeed2105$` → `%40WallySpeed2105%24`.
+`@`→`%40`, `$`→`%24`. e.g. `p@ss$word` → `p%40ss%24word`.
 `urllib.parse.quote(pw, safe="")` handles it. (Your VideoSource takes a full URL,
 so whoever builds the URL must encode.)
 

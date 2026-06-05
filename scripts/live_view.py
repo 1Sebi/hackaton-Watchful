@@ -1,7 +1,7 @@
 """Plain live RTSP viewer (no AI) — confirm the stream flows smoothly.
 
-  python scripts/live_view.py --ip 192.168.0.59 --password "2020@Doina" --cam 5
-  python scripts/live_view.py --ip 192.168.0.60 --password "@WallySpeed2105$" --cam 3 --stream main
+  python scripts/live_view.py --ip 192.168.0.59 --password "<NVR1_PASS>" --cam 5
+  python scripts/live_view.py --ip 192.168.0.60 --password "<NVR2_PASS>" --cam 3 --stream main
 
 Keys in the window:  q / Esc = quit   ·   s = save a snapshot
 """

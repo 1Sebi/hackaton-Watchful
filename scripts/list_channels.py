@@ -1,6 +1,6 @@
 """List all camera channels on a Hikvision NVR via ISAPI (HTTP digest auth).
 
-  python scripts/list_channels.py --ip 192.168.0.59 --user admin --password "2020@Doina"
+  python scripts/list_channels.py --ip 192.168.0.59 --user admin --password "<NVR1_PASS>"
 """
 from __future__ import annotations
 

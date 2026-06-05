@@ -3,7 +3,7 @@
 Clips are the non-duplicable core of PAS 14 — only a machine on the venue LAN
 can make them. Saved (gitignored) under eval/clips/<label>/<name>.mp4.
 
-  python scripts/record_clip.py --ip 192.168.0.59 --password "2020@Doina" --cam 5 \
+  python scripts/record_clip.py --ip 192.168.0.59 --password "<NVR1_PASS>" --cam 5 \
       --label neutral --name restaurant_empty_01 --seconds 8
 
 Labels by convention: true | trap | neutral

@@ -4,7 +4,7 @@ REAL Hikvision RTSP camera — the test the cloud agent can't run (no NVR access
 Run twice: once WITHOUT the FFmpeg TCP/timeout option (the current main code
 path), once WITH it, to show the difference on a real cross-subnet stream.
 
-  python scripts/validate_video_source.py --ip 192.168.0.59 --password "2020@Doina" --cam 5
+  python scripts/validate_video_source.py --ip 192.168.0.59 --password "<NVR1_PASS>" --cam 5
 """
 from __future__ import annotations
 
