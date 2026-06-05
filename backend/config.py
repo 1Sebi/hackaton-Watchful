@@ -43,10 +43,9 @@ class Settings:
     # % of pixels that must change frame-to-frame for the OpenCV motion gate to
     # consider the scene "moving" and run YOLO (lower = more sensitive).
     MOTION_MIN_PCT: float = _f("MOTION_MIN_PCT", 0.6)
-    # Display refresh of the ACTIVE camera (decoupled from detection -> smooth).
-    RENDER_FPS: float = _f("RENDER_FPS", 20.0)
-    # Display refresh of the inactive grid tiles (cheap; lower saves CPU).
-    GRID_TILE_FPS: float = _f("GRID_TILE_FPS", 6.0)
+    # Feed refresh for EVERY camera (single 4K main stream). 1 fps keeps many
+    # 4K decodes affordable; raise only if the box has headroom.
+    STREAM_FPS: float = _f("STREAM_FPS", 1.0)
     # Cap how often the active camera actually runs YOLO. 1 = analyze one frame
     # per second (plenty for an emergency monitor; makes a sharp 4K feed affordable).
     DETECT_MAX_FPS: float = _f("DETECT_MAX_FPS", 1.0)
@@ -94,20 +93,18 @@ def _load_cameras():
             ip, user, pw = _nvr_creds(str(c.get("nvr", "")))
             if not ip or not pw:
                 continue  # NVR creds not in .env -> skip this camera
-            sub_ch = int(c["channel"])                 # x02 sub-stream (light, for tiles)
-            main_ch = (sub_ch // 100) * 100 + 1         # x01 main stream (4K, for active)
+            ch = int(c["channel"])
+            main_ch = (ch // 100) * 100 + 1            # x01 = 4K main stream (only stream used)
             cams.append({
                 "id": c["id"],
                 "name": c.get("name", c["id"]),
                 "room": c.get("room", c.get("name", c["id"])),   # grouping for the UI
-                "url": _build_rtsp(ip, user, pw, sub_ch),        # tile / inactive
-                "main_url": _build_rtsp(ip, user, pw, main_ch),  # 4K when AI-active
+                "url": _build_rtsp(ip, user, pw, main_ch),       # 4K main @ STREAM_FPS
             })
     except Exception:
         cams = []
     if not cams:  # backward-compatible single-camera mode
-        cams = [{"id": "camera", "name": "Camera",
-                 "url": settings.VIDEO_SOURCE, "main_url": settings.VIDEO_SOURCE}]
+        cams = [{"id": "camera", "name": "Camera", "url": settings.VIDEO_SOURCE}]
         default = "camera"
     if default not in {c["id"] for c in cams}:
         default = cams[0]["id"]

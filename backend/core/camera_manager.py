@@ -5,15 +5,13 @@ AI pipeline (YOLO + pose + predicate evaluation + actions). Heavy models are
 loaded once and shared; per-camera state (tracker, anti-false-positive, motion
 gate, JPEG buffer, events) lives in each worker.
 
-Each worker decouples *display* from *detection*:
+Every camera streams the same single 4K main stream at STREAM_FPS (1 fps) — no
+sub-stream, no per-camera quality switching. Each worker decouples *display* from
+*detection*:
 
-  - render loop (~RENDER_FPS): publishes the freshest frame + last-known boxes,
-    so the live view stays smooth no matter how slow YOLO is on CPU;
-  - detect loop (active camera only): runs YOLO *only when the OpenCV MotionGate
-    sees movement*, evaluates each condition, and dispatches actions.
-
-A CPU-only box can't run heavy detection on N cameras at once, so inactive
-cameras only decode + draw a light tile (name + motion dot); zero YOLO.
+  - render loop (STREAM_FPS): publishes the freshest frame + last-known boxes;
+  - detect loop: the active camera runs full YOLO + pose + predicates (motion-
+    gated); inactive cameras only refresh a periodic people count (tile_count).
 """
 from __future__ import annotations
 
@@ -61,9 +59,7 @@ class CameraWorker:
         self.id: str = cam["id"]
         self.name: str = cam["name"]
         self.room: str = cam.get("room", cam["name"])       # UI grouping (one box per room)
-        self.sub_url: str = cam["url"]                       # light sub-stream (tile)
-        self.main_url: str = cam.get("main_url", cam["url"])  # 4K main (active)
-        self._cur_url: Optional[str] = None
+        self.url: str = cam["url"]                           # 4K main stream (the only stream)
         self.engine = engine
         self.manager = manager
 
@@ -142,10 +138,8 @@ class CameraWorker:
         if self.running:
             return
         self.running = True
-        want = self.main_url if self.is_active else self.sub_url  # active opens 4K
         try:
-            self._src = VideoSource(want)
-            self._cur_url = want
+            self._src = VideoSource(self.url)
         except Exception as e:  # noqa: BLE001
             self.error = f"open failed: {e}"
             self.running = False
@@ -157,27 +151,6 @@ class CameraWorker:
         ]
         for t in self._threads:
             t.start()
-
-    def set_stream(self, main: bool) -> None:
-        """Reopen on the 4K main stream (active) or the light sub-stream (tile).
-
-        Runs off the request path (4K can take ~2s to connect); the render/detect
-        loops tolerate the brief swap (a read on the released source returns None).
-        """
-        want = self.main_url if main else self.sub_url
-        if self._cur_url == want or not self.running:
-            return
-        try:
-            new = VideoSource(want)
-        except Exception as e:  # noqa: BLE001
-            self.error = f"open failed: {e}"
-            return
-        old = self._src
-        self._src = new
-        self._cur_url = want
-        self.error = None
-        if old is not None:
-            old.release()
 
     def stop(self) -> None:
         self.running = False
@@ -205,7 +178,7 @@ class CameraWorker:
             inst = 1.0 / dt if dt > 0 else 0.0
             ema = inst if ema is None else 0.9 * ema + 0.1 * inst
             self.fps = round(ema, 1)
-            target = settings.RENDER_FPS if self.is_active else settings.GRID_TILE_FPS
+            target = settings.STREAM_FPS
             if target > 0:
                 time.sleep(max(0.0, (1.0 / target) - (time.time() - t0)))
 
@@ -445,11 +418,8 @@ class CameraManager:
                 new._last_dets, new._last_pose_map = [], {}
             self.engine.detector.reset_tracker()
             new.reload()
-        # swap streams in the background (4K connect can take ~2s): the new active
-        # camera upgrades to 4K main; the old one drops back to the light sub-stream.
-        threading.Thread(target=new.set_stream, args=(True,), daemon=True).start()
-        if old is not None and old.id != cam_id:
-            threading.Thread(target=old.set_stream, args=(False,), daemon=True).start()
+        # all cameras already run the same 4K stream — switching active only moves
+        # which one gets full detection + its own rules (no stream swap needed).
         return True
 
     def cameras_state(self) -> dict:
