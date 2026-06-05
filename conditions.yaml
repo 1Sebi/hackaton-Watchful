@@ -1,0 +1,50 @@
+conditions:
+  # "Every time someone sits on the underwater chair in the jacuzzi and raises
+  #  their hand, turn on relay 1 for 5 minutes."
+  - id: jacuzzi-hand-raise
+    prompt: >-
+      A person is sitting on the underwater seat inside the jacuzzi AND has at
+      least one hand raised above their head.
+    confidence_min: 0.75
+    hits_needed: 3          # ~1.5s of agreement at 0.5s poll -> kills flicker
+    cooldown_seconds: 60
+    enabled: true
+    actions:
+      - type: relay
+        port: 1
+        state: on
+        duration_seconds: 300   # 5 minutes
+
+  # "If there's nobody in the image for more than 15 minutes, turn relays 1,2,3 OFF."
+  # hits_needed here ~= minutes*60 / poll_interval. With poll=1.0s, 15 min = 900.
+  - id: empty-15min
+    prompt: There are no people visible anywhere in the image.
+    confidence_min: 0.8
+    hits_needed: 900
+    cooldown_seconds: 300
+    enabled: true
+    actions:
+      - type: relay
+        port: 1
+        state: off
+      - type: relay
+        port: 2
+        state: off
+      - type: relay
+        port: 3
+        state: off
+      - type: notify
+        message: Venue empty for 15+ minutes — relays 1,2,3 turned off.
+
+  # "Notify me whenever more than 10 people are in the event hall."
+  - id: crowd-over-10
+    prompt: More than 10 distinct people are visible in the image.
+    confidence_min: 0.7
+    hits_needed: 2
+    cooldown_seconds: 120
+    enabled: true
+    actions:
+      - type: notify
+        message: More than 10 people detected in the event hall.
+      - type: log
+        message: crowd-threshold-exceeded
