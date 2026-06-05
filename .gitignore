@@ -41,3 +41,11 @@ eval/clips/*.avi
 eval/screenshots/
 
 # Ollama models (descarcate de Ollama in ~/.ollama, nu in repo)
+
+# Real camera snapshots (footage / privacy)
+snapshots/
+
+# Eval footage (all clips + previews) — privacy, keep local
+eval/clips/
+eval/preview.jpg
+eval/*.jpg

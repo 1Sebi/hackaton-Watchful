@@ -1,0 +1,23 @@
+{
+  "condition": "at least one person is present in view",
+  "predicate": "person_present",
+  "source": "real ThePlace venue cameras (NVR1 .59 / NVR2 .60), sub-stream 640x360",
+  "recorded": "2026-06-05 evening, ~6s ambient clips",
+  "labeling": "human eyeball on full clip; expected = a person is genuinely present",
+  "clips": [
+    {"file": "ambient/restaurant_a.mp4",      "expected": true,  "scene": "restaurant SW",      "notes": "diners at tables"},
+    {"file": "ambient/restaurant_b.mp4",      "expected": true,  "scene": "restaurant SW",      "notes": "diners at tables"},
+    {"file": "ambient/reception.mp4",         "expected": true,  "scene": "reception (NVR2 c7)", "notes": "staff at desk"},
+    {"file": "ambient/restaurant_bar.mp4",    "expected": true,  "scene": "restaurant bar",     "notes": "people near bar"},
+    {"file": "ambient/lobby_bar.mp4",         "expected": true,  "scene": "lobby bar (NVR1 c7)","notes": "person walking through"},
+    {"file": "ambient/w_entrance.mp4",        "expected": false, "scene": "w entrance",         "notes": "empty corridor"},
+    {"file": "ambient/lobby.mp4",             "expected": false, "scene": "lobby (NVR1 c2)",    "notes": "empty"},
+    {"file": "ambient/conference.mp4",        "expected": false, "scene": "conference SE",      "notes": "TRAP: rows of empty chairs"},
+    {"file": "ambient/lobby_bar2.mp4",        "expected": true,  "scene": "lobby bar (NVR2 c9)","notes": "bartender behind counter (corrected: missed on first eyeball labeling, model caught it)"},
+    {"file": "ambient/wine_cellar.mp4",       "expected": false, "scene": "wine cellar",        "notes": "empty"},
+    {"file": "ambient/gym.mp4",               "expected": false, "scene": "gym entrance",       "notes": "empty"},
+    {"file": "ambient/east_exit_glass.mp4",   "expected": false, "scene": "east exit",          "notes": "TRAP: glass reflections, plant"},
+    {"file": "ambient/north_parking.mp4",     "expected": false, "scene": "north parking",      "notes": "TRAP: parked cars, foliage"},
+    {"file": "ambient/west_parking.mp4",      "expected": false, "scene": "west parking",       "notes": "TRAP: cars, foliage motion"}
+  ]
+}
