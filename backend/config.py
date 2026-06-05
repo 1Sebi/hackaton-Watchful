@@ -50,6 +50,10 @@ class Settings:
     # Cap how often the active camera actually runs YOLO. 1 = analyze one frame
     # per second (plenty for an emergency monitor; makes a sharp 4K feed affordable).
     DETECT_MAX_FPS: float = _f("DETECT_MAX_FPS", 1.0)
+    # Inactive cameras refresh their tile people-count this often (seconds). They
+    # only count when the shared model lock is free, so they never slow the active
+    # camera. 0 disables per-tile counting. ~8s keeps every tile live cheaply.
+    GRID_COUNT_INTERVAL: float = _f("GRID_COUNT_INTERVAL", 8.0)
 
 
 settings = Settings()

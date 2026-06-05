@@ -92,6 +92,9 @@ class CameraWorker:
         self._src: Optional[VideoSource] = None
         self._threads: List[threading.Thread] = []
         self._last_detect = 0.0
+        # per-tile people count for INACTIVE cameras (active uses tracker.active_count)
+        self.tile_persons: Optional[int] = None
+        self._last_tile_count = 0.0
 
     # ── helpers ──────────────────────────────────────────────────────────
     @property
@@ -210,7 +213,8 @@ class CameraWorker:
         ema = None
         while self.running:
             if not self.is_active:
-                time.sleep(0.15)
+                self._tile_count_tick()   # keep this tile's people counter live
+                time.sleep(0.2)
                 continue
             now = time.time()
             # rate cap: analyze at most DETECT_MAX_FPS frames/sec (1 = once a second)
@@ -270,6 +274,34 @@ class CameraWorker:
             inst = 1.0 / dt if dt > 0 else 0.0
             ema = inst if ema is None else 0.9 * ema + 0.1 * inst
             self.detect_fps = round(ema, 1)
+
+    # ── per-tile people count (inactive cameras) ────────────────────────
+    def _tile_count_tick(self) -> None:
+        """Refresh this (inactive) camera's people count every GRID_COUNT_INTERVAL.
+
+        Counts only when the shared model lock is FREE (non-blocking) so the
+        active camera's detection is never delayed. Plain detect (no tracking) —
+        a tile counter doesn't need stable ids.
+        """
+        interval = settings.GRID_COUNT_INTERVAL
+        if interval <= 0:
+            return
+        now = time.time()
+        if now - self._last_tile_count < interval:
+            return
+        frame = self._src.read() if self._src else None
+        if frame is None:
+            return
+        if not self.engine.lock.acquire(blocking=False):
+            return  # active camera is using the model — try again next tick
+        try:
+            dets = self.engine.detector.detect(self._maybe_resize(frame))
+        except Exception:
+            dets = []
+        finally:
+            self.engine.lock.release()
+        self.tile_persons = len(dets)
+        self._last_tile_count = now
 
     # ── drawing ──────────────────────────────────────────────────────────
     def _maybe_resize(self, frame):
@@ -357,7 +389,7 @@ class CameraWorker:
         return {
             "id": self.id, "name": self.name, "active": active,
             "fps": self.fps, "detect_fps": self.detect_fps,
-            "persons": self.tracker.active_count if active else None,
+            "persons": self.tracker.active_count if active else self.tile_persons,
             "motion": round(self.motion_pct, 2),
             "moving": self.motion_pct >= settings.MOTION_MIN_PCT,
             "error": self.error,

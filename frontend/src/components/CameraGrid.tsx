@@ -52,6 +52,11 @@ export default function CameraGrid({
             className="block aspect-video w-full object-cover"
             onError={(e) => ((e.target as HTMLImageElement).style.opacity = "0.2")}
           />
+          {c.persons != null && (
+            <span className="absolute left-1 top-1 rounded bg-black/70 px-1.5 py-0.5 text-[11px] font-bold text-white">
+              🧍 {c.persons}
+            </span>
+          )}
           {c.id === activeId && (
             <span className="absolute right-1 top-1 rounded bg-accent px-1 text-[10px] font-bold text-ink">
               AI
