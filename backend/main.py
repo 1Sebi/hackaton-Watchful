@@ -10,20 +10,20 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend.api import conditions, events, stream, ws, zones
-from backend.core.pipeline import get_pipeline
+from backend.api import cameras, conditions, events, stream, ws, zones
+from backend.core.camera_manager import get_manager
 from backend.database import init_db
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
-    pipeline = get_pipeline()
-    pipeline.start()
+    manager = get_manager()
+    manager.start()
     try:
         yield
     finally:
-        pipeline.stop()
+        manager.stop()
 
 
 app = FastAPI(title="Watchful", version="1.0.0", lifespan=lifespan)
@@ -36,6 +36,7 @@ app.add_middleware(
     allow_credentials=False,
 )
 
+app.include_router(cameras.router)
 app.include_router(conditions.router)
 app.include_router(events.router)
 app.include_router(zones.router)
@@ -45,4 +46,4 @@ app.include_router(ws.router)
 
 @app.get("/", tags=["meta"])
 def root():
-    return {"name": "Watchful", "status": "ok", "pipeline": get_pipeline().state()}
+    return {"name": "Watchful", "status": "ok", "cameras": get_manager().cameras_state()}

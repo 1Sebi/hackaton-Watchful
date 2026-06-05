@@ -58,6 +58,45 @@ class ReferenceFrame:
         return changed
 
 
+class MotionGate:
+    """Frame-to-frame motion detector (pure OpenCV) — gates expensive YOLO.
+
+    Cheap: downscale -> grayscale -> blur -> ``cv2.absdiff`` against the previous
+    frame, reporting the % of pixels that changed. A static scene scores ~0 (skip
+    YOLO, save CPU and keep the video smooth); a busy scene scores high (run YOLO).
+    This is the OpenCV pre-filter — *"OpenCV decides WHEN, YOLO+VLM decide WHAT."*
+    """
+
+    def __init__(self, min_changed_pct: float = 0.6, pixel_delta: int = 18,
+                 width: int = 200, blur: int = 15) -> None:
+        self.min_changed_pct = min_changed_pct
+        self.pixel_delta = pixel_delta
+        self.width = width
+        self.blur = blur
+        self._prev: Optional[np.ndarray] = None
+        self.last_score: float = 0.0
+
+    def _prep(self, frame: np.ndarray) -> np.ndarray:
+        h, w = frame.shape[:2]
+        if w > self.width:
+            frame = cv2.resize(frame, (self.width, max(1, int(h * self.width / w))))
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        return cv2.GaussianBlur(gray, (self.blur, self.blur), 0)
+
+    def score(self, frame: np.ndarray) -> float:
+        """Return % of pixels changed since the previous call (and remember this frame)."""
+        cur = self._prep(frame)
+        if self._prev is None or self._prev.shape != cur.shape:
+            self._prev = cur
+            self.last_score = 100.0  # first frame -> treat as motion so YOLO runs once
+            return self.last_score
+        diff = cv2.absdiff(self._prev, cur)
+        self._prev = cur
+        changed = int(np.count_nonzero(diff > self.pixel_delta))
+        self.last_score = 100.0 * changed / diff.size
+        return self.last_score
+
+
 class AdaptiveSampler:
     """Gate VLM calls on scene change, with a periodic forced check."""
 

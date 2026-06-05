@@ -39,6 +39,67 @@ class Settings:
     # NTFY_BASE_URL/NTFY_TOPIC. Public service -> generic alert text only.
     NTFY_BASE_URL: str = os.environ.get("NTFY_BASE_URL", "https://ntfy.sh")
     NTFY_TOPIC: str = os.environ.get("NTFY_TOPIC", "")
+    # ── Multi-camera grid ──
+    # % of pixels that must change frame-to-frame for the OpenCV motion gate to
+    # consider the scene "moving" and run YOLO (lower = more sensitive).
+    MOTION_MIN_PCT: float = _f("MOTION_MIN_PCT", 0.6)
+    # Display refresh of the ACTIVE camera (decoupled from detection -> smooth).
+    RENDER_FPS: float = _f("RENDER_FPS", 20.0)
+    # Display refresh of the inactive grid tiles (cheap; lower saves CPU).
+    GRID_TILE_FPS: float = _f("GRID_TILE_FPS", 6.0)
 
 
 settings = Settings()
+
+
+# ── Camera registry (multi-camera grid) ──────────────────────────────────
+# cameras.json carries id/name/nvr/channel (NO secrets, committed); the RTSP URL
+# is assembled here from the NVR ip+password in .env so credentials never touch git.
+import json as _json  # noqa: E402
+from pathlib import Path as _Path  # noqa: E402
+from urllib.parse import quote as _quote  # noqa: E402
+
+
+def _nvr_creds(tag: str):
+    ip = os.environ.get(f"{tag}_IP", "")
+    user = os.environ.get(f"{tag}_USER", "admin")
+    pw = os.environ.get(f"{tag}_PASS", "")
+    return ip, user, pw
+
+
+def _build_rtsp(ip: str, user: str, pw: str, channel: int) -> str:
+    # URL-encode the password (@ -> %40, $ -> %24, ...) so RTSP parsing is safe.
+    return f"rtsp://{user}:{_quote(pw, safe='')}@{ip}:554/Streaming/Channels/{channel}"
+
+
+def _load_cameras():
+    """Resolve backend/cameras.json into [{id,name,url}] using .env NVR creds.
+
+    Cameras whose NVR creds are absent are skipped. Falls back to a single
+    camera wrapping VIDEO_SOURCE when no registry/creds are available.
+    """
+    path = _Path(__file__).resolve().parent / "cameras.json"
+    cams, default = [], None
+    try:
+        spec = _json.loads(path.read_text(encoding="utf-8"))
+        default = spec.get("default_active")
+        for c in spec.get("cameras", []):
+            ip, user, pw = _nvr_creds(str(c.get("nvr", "")))
+            if not ip or not pw:
+                continue  # NVR creds not in .env -> skip this camera
+            cams.append({
+                "id": c["id"],
+                "name": c.get("name", c["id"]),
+                "url": _build_rtsp(ip, user, pw, int(c["channel"])),
+            })
+    except Exception:
+        cams = []
+    if not cams:  # backward-compatible single-camera mode
+        cams = [{"id": "camera", "name": "Camera", "url": settings.VIDEO_SOURCE}]
+        default = "camera"
+    if default not in {c["id"] for c in cams}:
+        default = cams[0]["id"]
+    return cams, default
+
+
+settings.CAMERAS, settings.DEFAULT_ACTIVE = _load_cameras()

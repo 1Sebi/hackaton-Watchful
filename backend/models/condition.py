@@ -16,6 +16,7 @@ class Condition(Base):
     __tablename__ = "conditions"
 
     id = Column(Integer, primary_key=True)
+    camera_id = Column(String, nullable=True)      # which camera this rule watches
     text = Column(String, nullable=False)          # the NL condition
     predicate = Column(JSON, nullable=True)        # compiled Predicate dict
     action = Column(JSON, nullable=True)           # action config dict
@@ -25,6 +26,7 @@ class Condition(Base):
     def to_dict(self) -> dict:
         return {
             "id": self.id,
+            "camera_id": self.camera_id,
             "text": self.text,
             "predicate": self.predicate,
             "action": self.action,

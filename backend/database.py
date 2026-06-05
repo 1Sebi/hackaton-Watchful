@@ -14,11 +14,28 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, futu
 Base = declarative_base()
 
 
+def _migrate_camera_id() -> None:
+    """Add the ``camera_id`` column to pre-existing tables (SQLite, idempotent)."""
+    if not DB_URL.startswith("sqlite"):
+        return
+    from sqlalchemy import text
+
+    with engine.begin() as conn:
+        for table in ("conditions", "events", "zones"):
+            try:
+                cols = [row[1] for row in conn.execute(text(f"PRAGMA table_info({table})"))]
+                if cols and "camera_id" not in cols:
+                    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN camera_id VARCHAR"))
+            except Exception:
+                pass
+
+
 def init_db() -> None:
     """Create all tables (idempotent). Imports models to register them."""
     import backend.models  # noqa: F401  (registers Condition/Event/Zone on Base)
 
     Base.metadata.create_all(bind=engine)
+    _migrate_camera_id()
 
 
 def get_db():

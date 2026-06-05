@@ -100,3 +100,15 @@ class PersonDetector:
         if not results:
             return []
         return self._boxes_to_detections(results[0])
+
+    def reset_tracker(self) -> None:
+        """Clear ByteTrack state — call when switching which camera is detected,
+        so track ids from the previous scene don't bleed into the new one."""
+        try:
+            pred = getattr(self.model, "predictor", None)
+            trackers = getattr(pred, "trackers", None) if pred is not None else None
+            for t in trackers or []:
+                if hasattr(t, "reset"):
+                    t.reset()
+        except Exception:
+            pass

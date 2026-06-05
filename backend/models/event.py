@@ -25,6 +25,7 @@ class Event(Base):
 
     id = Column(Integer, primary_key=True)
     condition_id = Column(Integer, ForeignKey("conditions.id"), nullable=True)
+    camera_id = Column(String, nullable=True)  # which camera fired
     timestamp = Column(DateTime, default=_utcnow)
     detected = Column(Boolean, default=False)
     confidence = Column(Float, default=0.0)
@@ -36,6 +37,7 @@ class Event(Base):
         return {
             "id": self.id,
             "condition_id": self.condition_id,
+            "camera_id": self.camera_id,
             "timestamp": self.timestamp.isoformat() if self.timestamp else None,
             "detected": self.detected,
             "confidence": self.confidence,

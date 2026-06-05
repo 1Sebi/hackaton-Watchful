@@ -16,13 +16,15 @@ class Zone(Base):
     __tablename__ = "zones"
 
     id = Column(Integer, primary_key=True)
-    name = Column(String, unique=True, nullable=False)
-    polygon = Column(JSON, nullable=False)  # [[x, y], ...] in pixel coords
+    camera_id = Column(String, nullable=True)  # zones are per-camera (pixel coords)
+    name = Column(String, nullable=False)      # unique per camera, not globally
+    polygon = Column(JSON, nullable=False)     # [[x, y], ...] in pixel coords
     created_at = Column(DateTime, default=_utcnow)
 
     def to_dict(self) -> dict:
         return {
             "id": self.id,
+            "camera_id": self.camera_id,
             "name": self.name,
             "polygon": self.polygon,
             "created_at": self.created_at.isoformat() if self.created_at else None,

@@ -251,8 +251,19 @@ class AgentPipeline:
 _pipeline: Optional[AgentPipeline] = None
 
 
-def get_pipeline() -> AgentPipeline:
+def get_pipeline():
+    """Back-compat shim: the conditions/zones/ws routes call ``get_pipeline()`` to
+    reach "the running engine". With multi-camera that is the *active* camera
+    worker, which exposes the same surface (``.vlm``, ``._zones``, ``.state()``,
+    ``.events``, ``.events_since``, ``._event_seq``, ``.reload()``). Falls back to
+    the legacy single ``AgentPipeline`` only if no camera manager/worker exists.
+    """
     global _pipeline
+    from backend.core.camera_manager import get_manager
+
+    worker = get_manager().active()
+    if worker is not None:
+        return worker
     if _pipeline is None:
         _pipeline = AgentPipeline()
     return _pipeline
