@@ -37,6 +37,7 @@ export default function EventLog() {
               <span className="shrink-0 text-[11px] text-slate-500">{fmtTime(e)}</span>
             </div>
             <div className="text-[11px] text-slate-400">
+              {e.camera_name && <span className="text-slate-300">📷 {e.camera_name} · </span>}
               {e.reason}
               {(e.action || e.action_taken) && <> · {e.action || e.action_taken}</>}
               {e.confidence != null && <> · conf {Number(e.confidence).toFixed(2)}</>}

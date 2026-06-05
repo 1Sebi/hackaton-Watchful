@@ -1,17 +1,26 @@
 import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { API, del, getJSON, postJSON, type Zone } from "../api";
 
-export default function ZoneDrawer() {
+function snapUrl(activeId: string): string {
+  const path = activeId ? `/stream/${activeId}/snapshot.jpg` : "/stream/snapshot.jpg";
+  return API + path + "?ts=" + Date.now();
+}
+
+export default function ZoneDrawer({ activeId }: { activeId: string }) {
   const imgRef = useRef<HTMLImageElement>(null);
   const [points, setPoints] = useState<[number, number][]>([]);
   const [name, setName] = useState("");
   const [zones, setZones] = useState<Zone[]>([]);
-  const [snap, setSnap] = useState(API + "/stream/snapshot.jpg");
+  const [snap, setSnap] = useState(snapUrl(activeId));
 
-  const load = async () => setZones(await getJSON<Zone[]>("/zones"));
+  const load = async () =>
+    setZones(await getJSON<Zone[]>(activeId ? `/zones?camera_id=${activeId}` : "/zones"));
   useEffect(() => {
+    setSnap(snapUrl(activeId)); // fresh snapshot for the newly active camera
+    setPoints([]);
     load();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeId]);
 
   const click = (e: MouseEvent<HTMLDivElement>) => {
     const img = imgRef.current;
@@ -26,7 +35,7 @@ export default function ZoneDrawer() {
 
   const save = async () => {
     if (points.length < 3 || !name.trim()) return;
-    await postJSON("/zones", { name, polygon: points });
+    await postJSON("/zones", { name, polygon: points, camera_id: activeId || null });
     setPoints([]);
     setName("");
     load();
@@ -67,7 +76,7 @@ export default function ZoneDrawer() {
           Clear
         </button>
         <button
-          onClick={() => setSnap(API + "/stream/snapshot.jpg?ts=" + Date.now())}
+          onClick={() => setSnap(snapUrl(activeId))}
           className="rounded-lg border border-edge px-3 py-1.5 text-sm"
           title="refresh snapshot"
         >

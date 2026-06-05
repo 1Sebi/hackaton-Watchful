@@ -27,6 +27,9 @@ export default function StatusBar() {
         <span className={`h-2.5 w-2.5 rounded-full ${dot}`} />
         {s?.running ? "live" : "offline"}
       </span>
+      {s?.camera_name && (
+        <span className="rounded bg-edge px-2 py-0.5 text-xs text-accent">📷 {s.camera_name}</span>
+      )}
       <Stat label="FPS" value={s ? s.fps.toFixed(0) : "—"} />
       <Stat label="persons" value={s ? String(s.persons) : "—"} />
       <Stat label="rules" value={s ? String(s.conditions) : "—"} />

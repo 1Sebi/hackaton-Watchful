@@ -1,14 +1,28 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import StatusBar from "./components/StatusBar";
+import CameraGrid from "./components/CameraGrid";
 import LiveView from "./components/LiveView";
 import ConditionEditor from "./components/ConditionEditor";
 import ConditionsList from "./components/ConditionsList";
 import EventLog from "./components/EventLog";
 import ZoneDrawer from "./components/ZoneDrawer";
+import { getCameras } from "./api";
 
 export default function App() {
   const [refresh, setRefresh] = useState(0);
   const [tab, setTab] = useState<"live" | "zones">("live");
+  const [activeId, setActiveId] = useState("");
+
+  useEffect(() => {
+    getCameras()
+      .then((s) => setActiveId(s.active))
+      .catch(() => undefined);
+  }, []);
+
+  const activate = (id: string) => {
+    setActiveId(id);
+    setRefresh((r) => r + 1); // re-scope conditions/zones to the new camera
+  };
 
   return (
     <div className="min-h-screen">
@@ -25,6 +39,7 @@ export default function App() {
 
       <main className="grid grid-cols-1 gap-4 p-4 lg:grid-cols-3">
         <section className="space-y-4 lg:col-span-2">
+          <CameraGrid activeId={activeId} onActivate={activate} />
           <div className="flex gap-2">
             <TabBtn active={tab === "live"} onClick={() => setTab("live")}>
               Live
@@ -33,12 +48,12 @@ export default function App() {
               Zones
             </TabBtn>
           </div>
-          {tab === "live" ? <LiveView /> : <ZoneDrawer />}
+          {tab === "live" ? <LiveView activeId={activeId} /> : <ZoneDrawer activeId={activeId} />}
         </section>
 
         <section className="space-y-4">
-          <ConditionEditor onAdded={() => setRefresh((r) => r + 1)} />
-          <ConditionsList refresh={refresh} />
+          <ConditionEditor activeId={activeId} onAdded={() => setRefresh((r) => r + 1)} />
+          <ConditionsList activeId={activeId} refresh={refresh} />
           <EventLog />
         </section>
       </main>

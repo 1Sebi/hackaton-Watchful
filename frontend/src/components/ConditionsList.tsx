@@ -1,13 +1,15 @@
 import { useEffect, useState } from "react";
 import { type Condition, del, getJSON, putJSON } from "../api";
 
-export default function ConditionsList({ refresh }: { refresh: number }) {
+export default function ConditionsList({ activeId, refresh }: { activeId: string; refresh: number }) {
   const [items, setItems] = useState<Condition[]>([]);
 
-  const load = async () => setItems(await getJSON<Condition[]>("/conditions"));
+  const load = async () =>
+    setItems(await getJSON<Condition[]>(activeId ? `/conditions?camera_id=${activeId}` : "/conditions"));
   useEffect(() => {
     load();
-  }, [refresh]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refresh, activeId]);
 
   const toggle = async (c: Condition) => {
     await putJSON(`/conditions/${c.id}`, { text: c.text, action: c.action, enabled: !c.enabled });

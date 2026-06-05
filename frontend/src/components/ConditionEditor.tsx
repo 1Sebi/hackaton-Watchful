@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { postJSON, type Predicate } from "../api";
 
-export default function ConditionEditor({ onAdded }: { onAdded: () => void }) {
+export default function ConditionEditor({ activeId, onAdded }: { activeId: string; onAdded: () => void }) {
   const [text, setText] = useState("");
   const [action, setAction] = useState("log");
   const [preview, setPreview] = useState<Predicate | null>(null);
@@ -27,7 +27,7 @@ export default function ConditionEditor({ onAdded }: { onAdded: () => void }) {
     if (!text.trim()) return;
     setBusy(true);
     try {
-      await postJSON("/conditions", { text, action: { type: action } });
+      await postJSON("/conditions", { text, action: { type: action }, camera_id: activeId || null });
       setText("");
       setPreview(null);
       onAdded();

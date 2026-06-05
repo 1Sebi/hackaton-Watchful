@@ -46,6 +46,8 @@ export interface EventItem {
   id?: number;
   seq?: number;
   condition_id?: number;
+  camera_id?: string;
+  camera_name?: string;
   text?: string;
   reason?: string;
   confidence?: number;
@@ -55,6 +57,21 @@ export interface EventItem {
   action?: string;
   action_taken?: string;
 }
+export interface CameraTile {
+  id: string;
+  name: string;
+  active: boolean;
+  fps: number;
+  detect_fps: number;
+  persons: number | null;
+  motion: number;
+  moving: boolean;
+  error?: string | null;
+}
+export interface CamerasState {
+  active: string;
+  cameras: CameraTile[];
+}
 export interface AgentState {
   running: boolean;
   fps: number;
@@ -62,6 +79,15 @@ export interface AgentState {
   conditions: number;
   error?: string | null;
   last_event?: EventItem | null;
+  active?: string;
+  camera_name?: string;
+  cameras?: CameraTile[];
+}
+export async function getCameras(): Promise<CamerasState> {
+  return getJSON<CamerasState>("/cameras");
+}
+export async function activateCamera(id: string): Promise<CamerasState> {
+  return postJSON<CamerasState>(`/cameras/${id}/activate`, {});
 }
 export interface Zone {
   id: number;
