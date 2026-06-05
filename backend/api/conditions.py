@@ -42,7 +42,8 @@ def _active_id() -> Optional[str]:
 def list_conditions(camera_id: Optional[str] = None, db: Session = Depends(get_db)):
     q = db.query(Condition)
     if camera_id is not None:
-        q = q.filter(Condition.camera_id == camera_id)
+        # include global/legacy (null-camera) rules — they run on every camera
+        q = q.filter((Condition.camera_id == camera_id) | (Condition.camera_id.is_(None)))
     return [c.to_dict() for c in q.order_by(Condition.id).all()]
 
 

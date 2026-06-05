@@ -29,7 +29,7 @@ def _active_id() -> Optional[str]:
 def list_zones(camera_id: Optional[str] = None, db: Session = Depends(get_db)):
     q = db.query(Zone)
     if camera_id is not None:
-        q = q.filter(Zone.camera_id == camera_id)
+        q = q.filter((Zone.camera_id == camera_id) | (Zone.camera_id.is_(None)))
     return [z.to_dict() for z in q.order_by(Zone.id).all()]
 
 

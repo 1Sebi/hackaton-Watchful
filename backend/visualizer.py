@@ -76,7 +76,7 @@ def _draw_hud(img, state):
     h, w = img.shape[:2]
     state = state or {}
     cv2.rectangle(img, (0, 0), (w, 30), (20, 20, 20), -1)
-    txt = (f"WATCHFUL   FPS {state.get('fps', 0):.0f}   "
+    txt = (f"WATCHFUL   FPS {state.get('fps', 0):.0f}   AI {state.get('detect_fps', 0):.0f}/s   "
            f"persons {state.get('persons', 0)}   conditions {state.get('conditions', 0)}")
     cv2.putText(img, txt, (8, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 170), 2)
     le = state.get("last_event")

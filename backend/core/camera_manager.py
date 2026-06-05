@@ -298,7 +298,8 @@ class CameraWorker:
         return img
 
     def _hud_state(self) -> dict:
-        return {"fps": self.fps, "persons": self.tracker.active_count,
+        return {"fps": self.fps, "detect_fps": self.detect_fps,
+                "persons": self.tracker.active_count,
                 "conditions": len([c for c in self._conditions if c["enabled"]]),
                 "last_event": self.events[-1] if self.events else None}
 
