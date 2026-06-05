@@ -99,6 +99,7 @@ def _load_cameras():
             cams.append({
                 "id": c["id"],
                 "name": c.get("name", c["id"]),
+                "room": c.get("room", c.get("name", c["id"])),   # grouping for the UI
                 "url": _build_rtsp(ip, user, pw, sub_ch),        # tile / inactive
                 "main_url": _build_rtsp(ip, user, pw, main_ch),  # 4K when AI-active
             })

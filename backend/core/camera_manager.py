@@ -60,6 +60,7 @@ class CameraWorker:
     def __init__(self, cam: dict, engine: _Engine, manager: "CameraManager") -> None:
         self.id: str = cam["id"]
         self.name: str = cam["name"]
+        self.room: str = cam.get("room", cam["name"])       # UI grouping (one box per room)
         self.sub_url: str = cam["url"]                       # light sub-stream (tile)
         self.main_url: str = cam.get("main_url", cam["url"])  # 4K main (active)
         self._cur_url: Optional[str] = None
@@ -387,7 +388,7 @@ class CameraWorker:
 
     def tile_state(self, active: bool) -> dict:
         return {
-            "id": self.id, "name": self.name, "active": active,
+            "id": self.id, "name": self.name, "room": self.room, "active": active,
             "fps": self.fps, "detect_fps": self.detect_fps,
             "persons": self.tracker.active_count if active else self.tile_persons,
             "motion": round(self.motion_pct, 2),

@@ -60,6 +60,7 @@ export interface EventItem {
 export interface CameraTile {
   id: string;
   name: string;
+  room: string;
   active: boolean;
   fps: number;
   detect_fps: number;
