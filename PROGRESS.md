@@ -1,9 +1,9 @@
 # Watchful — Progress Log
 
 ## 📊 Current Status
-- **Last completed step:** PAS 7 - Reference Frame + Adaptive Sampling ✅
-- **Currently working on:** PAS 8 - Anti-False-Positive Layer
-- **Last update:** 2026-06-05 20:30
+- **Last completed step:** PAS 8 - Anti-False-Positive Layer ✅
+- **Currently working on:** PAS 9 - Database & Models
+- **Last update:** 2026-06-05 20:40
 - **Blockers:** none
 
 ## 🎯 Steps Overview
@@ -18,7 +18,7 @@
 | 5 | Predicate Compiler (VLM-based) | ✅ DONE | c97b346 | 10/10 EN+RO, hybrid |
 | 6 | Predicate Evaluator (Hybrid) | ✅ DONE | bafac94 | 11/11 checks, tag v0.3 |
 | 7 | Reference Frame + Adaptive Sampling | ✅ DONE | cd84065 | 5/5, empty→no VLM |
-| 8 | Anti-False-Positive Layer | ⏳ TODO | - | - |
+| 8 | Anti-False-Positive Layer | ✅ DONE | 64529aa | 4/4, max 1/cooldown, tag v0.4 |
 | 9 | Database & Models | ⏳ TODO | - | - |
 | 10 | Action Dispatcher + Hikvision | ⏳ TODO | - | - |
 | 11 | FastAPI Backend + Pipeline | ⏳ TODO | - | - |
@@ -183,16 +183,19 @@ Checklist:
 **Notes:** 5/5 checks. Forced periodic VLM (force_interval) ensures occasional semantic checks even on a static scene.
 
 ### PAS 8: Anti-False-Positive Layer
-**Status:** ⏳ TODO
+**Status:** ✅ DONE
+**Commit:** 64529aa
 
 Checklist:
-- [ ] backend/antifalse/debouncer.py created
-- [ ] backend/antifalse/cooldown.py created
-- [ ] backend/antifalse/threshold.py created
-- [ ] 5 mechanisms: debounce, threshold, cooldown, zone mask, reference frame
-- [ ] Test: 100 noisy evals → max 1 trigger per cooldown
-- [ ] Tag v0.4-anti-false-positive created
-- [ ] Commit + push done
+- [x] backend/antifalse/debouncer.py created
+- [x] backend/antifalse/cooldown.py created
+- [x] backend/antifalse/threshold.py created
+- [x] 5 mechanisms: debounce, threshold, cooldown (+ zone mask in evaluator PAS6, reference frame PAS7) — AntiFalsePositive coordinator
+- [x] Test: 100 noisy evals → max 1 trigger per cooldown — fires [2,32,66,99], gaps all ≥30s
+- [x] Tag v0.4-anti-false-positive created
+- [x] Commit + push done
+
+**Notes:** 4/4 checks. threshold blocks low-conf, debounce needs N consecutive, happy path fires once then mutes.
 
 ### PAS 9: Database & Models
 **Status:** ⏳ TODO
@@ -309,6 +312,7 @@ Checklist:
 - 2026-06-05 20:12 | PAS 5 | ✅ DONE — hybrid compiler 10/10 EN+RO; spotted & fixed an 8/10 regression by re-running; committed c97b346
 - 2026-06-05 20:22 | PAS 6 | ✅ DONE — HybridEvaluator 11/11 checks (yolo/pose/vlm + adaptive sampling); committed bafac94, tag v0.3-agent-loop
 - 2026-06-05 20:30 | PAS 7 | ✅ DONE — ReferenceFrame + AdaptiveSampler 5/5, empty→no VLM; committed cd84065
+- 2026-06-05 20:40 | PAS 8 | ✅ DONE — AFP layer 4/4, 100 noisy→max 1/cooldown; committed 64529aa, tag v0.4-anti-false-positive
 
 ## 🎓 Decision Log
 - **VLM model:** moondream (primary, fast, 1.7GB) + llama3.2-vision (fallback for hard SEMANTIC, 7.8GB). Replaces brief's `llava:7b` suggestion — both already pulled locally. User-approved.
