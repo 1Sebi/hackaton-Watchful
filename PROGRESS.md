@@ -1,9 +1,9 @@
 # Watchful — Progress Log
 
 ## 📊 Current Status
-- **Last completed step:** PAS 6 - Predicate Evaluator (Hybrid) ✅
-- **Currently working on:** PAS 7 - Reference Frame + Adaptive Sampling
-- **Last update:** 2026-06-05 20:22
+- **Last completed step:** PAS 7 - Reference Frame + Adaptive Sampling ✅
+- **Currently working on:** PAS 8 - Anti-False-Positive Layer
+- **Last update:** 2026-06-05 20:30
 - **Blockers:** none
 
 ## 🎯 Steps Overview
@@ -17,7 +17,7 @@
 | 4 | Pose Analyzer | ✅ DONE | 672798a | 3 standing, rules 9/9, tag v0.2 |
 | 5 | Predicate Compiler (VLM-based) | ✅ DONE | c97b346 | 10/10 EN+RO, hybrid |
 | 6 | Predicate Evaluator (Hybrid) | ✅ DONE | bafac94 | 11/11 checks, tag v0.3 |
-| 7 | Reference Frame + Adaptive Sampling | ⏳ TODO | - | - |
+| 7 | Reference Frame + Adaptive Sampling | ✅ DONE | cd84065 | 5/5, empty→no VLM |
 | 8 | Anti-False-Positive Layer | ⏳ TODO | - | - |
 | 9 | Database & Models | ⏳ TODO | - | - |
 | 10 | Action Dispatcher + Hikvision | ⏳ TODO | - | - |
@@ -169,15 +169,18 @@ Checklist:
 **Notes:** semantic VLM uses moondream by default (fast ~250ms); heavy=True (llama3.2-vision) opt-in via params. point-in-zone via cv2.pointPolygonTest.
 
 ### PAS 7: Reference Frame + Adaptive Sampling
-**Status:** ⏳ TODO
+**Status:** ✅ DONE
+**Commit:** cd84065
 
 Checklist:
-- [ ] backend/core/reference_frame.py created
-- [ ] significant_change() method works
-- [ ] Auto-update every 5 min
-- [ ] Adaptive sampler: skip VLM calls when no significant change
-- [ ] Test: empty scene → no VLM call (verify in logs)
-- [ ] Commit + push done
+- [x] backend/core/reference_frame.py created
+- [x] significant_change() method works — blurred-gray %-changed-pixels diff
+- [x] Auto-update every 5 min — update_interval=300s default (verified at 10s in test)
+- [x] Adaptive sampler: skip VLM calls when no significant change — AdaptiveSampler.should_run_vlm
+- [x] Test: empty scene → no VLM call — static 10 frames = [True, False×9]
+- [x] Commit + push done
+
+**Notes:** 5/5 checks. Forced periodic VLM (force_interval) ensures occasional semantic checks even on a static scene.
 
 ### PAS 8: Anti-False-Positive Layer
 **Status:** ⏳ TODO
@@ -305,6 +308,7 @@ Checklist:
 - 2026-06-05 20:00 | PAS 4 | ✅ DONE — PoseAnalyzer, skeleton verified, rules 9/9, 31.5 FPS; committed 672798a, tag v0.2-detection
 - 2026-06-05 20:12 | PAS 5 | ✅ DONE — hybrid compiler 10/10 EN+RO; spotted & fixed an 8/10 regression by re-running; committed c97b346
 - 2026-06-05 20:22 | PAS 6 | ✅ DONE — HybridEvaluator 11/11 checks (yolo/pose/vlm + adaptive sampling); committed bafac94, tag v0.3-agent-loop
+- 2026-06-05 20:30 | PAS 7 | ✅ DONE — ReferenceFrame + AdaptiveSampler 5/5, empty→no VLM; committed cd84065
 
 ## 🎓 Decision Log
 - **VLM model:** moondream (primary, fast, 1.7GB) + llama3.2-vision (fallback for hard SEMANTIC, 7.8GB). Replaces brief's `llava:7b` suggestion — both already pulled locally. User-approved.
