@@ -1,9 +1,9 @@
 # Watchful — Progress Log
 
 ## 📊 Current Status
-- **Last completed step:** PAS 10 - Action Dispatcher + Hikvision ✅
-- **Currently working on:** PAS 11 - FastAPI Backend + Pipeline
-- **Last update:** 2026-06-05 21:00
+- **Last completed step:** PAS 11 - FastAPI Backend + Pipeline ✅
+- **Currently working on:** PAS 12 - Visualizer
+- **Last update:** 2026-06-05 21:25
 - **Blockers:** none
 
 ## 🎯 Steps Overview
@@ -21,7 +21,7 @@
 | 8 | Anti-False-Positive Layer | ✅ DONE | 64529aa | 4/4, max 1/cooldown, tag v0.4 |
 | 9 | Database & Models | ✅ DONE | b0a65bb | CRUD 6/6 |
 | 10 | Action Dispatcher + Hikvision | ✅ DONE | 2489aae | 8/8 stand-in, tag v0.5 |
-| 11 | FastAPI Backend + Pipeline | ⏳ TODO | - | - |
+| 11 | FastAPI Backend + Pipeline | ✅ DONE | 287d4a6 | live+TestClient 12/12 |
 | 12 | Visualizer | ⏳ TODO | - | - |
 | 13 | Frontend (React + Tailwind) | ⏳ TODO | - | - |
 | 14 | Eval Set + Calibration | ⏳ TODO | - | - |
@@ -228,21 +228,24 @@ Checklist:
 **Notes:** 8/8 checks against a local stand-in HTTP server (no camera/cloud). Real Hikvision device not on hand; ISAPI URL/body/method verified exactly. Digest auth wired (HTTPDigestAuth).
 
 ### PAS 11: FastAPI Backend + Pipeline
-**Status:** ⏳ TODO
+**Status:** ✅ DONE
+**Commit:** 287d4a6
 
 Checklist:
-- [ ] backend/main.py with FastAPI app
-- [ ] CORS configured
-- [ ] backend/core/pipeline.py main agent loop
-- [ ] /conditions CRUD endpoints
-- [ ] /events endpoints
-- [ ] /zones endpoints
-- [ ] /stream/live.mjpg with overlay
-- [ ] /ws/events WebSocket
-- [ ] /ws/state WebSocket
-- [ ] uvicorn starts, /docs accessible
-- [ ] MJPEG stream visible in browser
-- [ ] Commit + push done
+- [x] backend/main.py with FastAPI app (lifespan starts/stops pipeline)
+- [x] CORS configured
+- [x] backend/core/pipeline.py main agent loop (perceive→reason→AFP→act, bg thread)
+- [x] /conditions CRUD endpoints (+ /preview compile)
+- [x] /events endpoints
+- [x] /zones endpoints
+- [x] /stream/live.mjpg with overlay — verified multipart + JPEG SOI bytes (real uvicorn)
+- [x] /ws/events WebSocket
+- [x] /ws/state WebSocket — verified delivers {running,fps,persons,conditions}
+- [x] uvicorn starts, /docs accessible — 200
+- [x] MJPEG stream visible in browser — snapshot 7748-byte JPEG + live multipart verified
+- [x] Commit + push done
+
+**Notes:** validated two ways — live uvicorn probes (REST/MJPEG/WS) + reproducible scripts/test_api.py TestClient **12/12**. Live loop ~13 FPS (det+pose+encode on CPU, single client). Added backend/config.py for centralized env.
 
 ### PAS 12: Visualizer
 **Status:** ⏳ TODO
@@ -319,6 +322,7 @@ Checklist:
 - 2026-06-05 20:40 | PAS 8 | ✅ DONE — AFP layer 4/4, 100 noisy→max 1/cooldown; committed 64529aa, tag v0.4-anti-false-positive
 - 2026-06-05 20:48 | PAS 9 | ✅ DONE — SQLAlchemy Condition/Event/Zone, CRUD 6/6; committed b0a65bb
 - 2026-06-05 21:00 | PAS 10 | ✅ DONE — action dispatcher (relay/webhook/log) 8/8 stand-in; committed 2489aae, tag v0.5-actions
+- 2026-06-05 21:25 | PAS 11 | ✅ DONE — FastAPI backend + agent pipeline, live+TestClient 12/12; committed 287d4a6
 
 ## 🎓 Decision Log
 - **VLM model:** moondream (primary, fast, 1.7GB) + llama3.2-vision (fallback for hard SEMANTIC, 7.8GB). Replaces brief's `llava:7b` suggestion — both already pulled locally. User-approved.
