@@ -1,9 +1,9 @@
 # Watchful — Progress Log
 
 ## 📊 Current Status
-- **Last completed step:** PAS 9 - Database & Models ✅
-- **Currently working on:** PAS 10 - Action Dispatcher + Hikvision
-- **Last update:** 2026-06-05 20:48
+- **Last completed step:** PAS 10 - Action Dispatcher + Hikvision ✅
+- **Currently working on:** PAS 11 - FastAPI Backend + Pipeline
+- **Last update:** 2026-06-05 21:00
 - **Blockers:** none
 
 ## 🎯 Steps Overview
@@ -20,7 +20,7 @@
 | 7 | Reference Frame + Adaptive Sampling | ✅ DONE | cd84065 | 5/5, empty→no VLM |
 | 8 | Anti-False-Positive Layer | ✅ DONE | 64529aa | 4/4, max 1/cooldown, tag v0.4 |
 | 9 | Database & Models | ✅ DONE | b0a65bb | CRUD 6/6 |
-| 10 | Action Dispatcher + Hikvision | ⏳ TODO | - | - |
+| 10 | Action Dispatcher + Hikvision | ✅ DONE | 2489aae | 8/8 stand-in, tag v0.5 |
 | 11 | FastAPI Backend + Pipeline | ⏳ TODO | - | - |
 | 12 | Visualizer | ⏳ TODO | - | - |
 | 13 | Frontend (React + Tailwind) | ⏳ TODO | - | - |
@@ -210,19 +210,22 @@ Checklist:
 - [x] Commit + push done
 
 ### PAS 10: Action Dispatcher + Hikvision
-**Status:** ⏳ TODO
-(Reuse: salvage Hikvision ISAPI relay + Digest auth pattern from prior branch act.py, adapted local.)
+**Status:** ✅ DONE
+**Commit:** 2489aae
+(Reused Hikvision ISAPI relay + Digest auth pattern from prior branch act.py, adapted into brief's structure.)
 
 Checklist:
-- [ ] backend/actions/hikvision.py (Digest auth, ISAPI)
-- [ ] relay_set(port, state, duration) works
-- [ ] backend/actions/webhook.py (ntfy.sh, Discord, generic)
-- [ ] backend/actions/logger.py
-- [ ] backend/actions/dispatcher.py async coordinator
-- [ ] scripts/test_hikvision_relay.py created
-- [ ] docs/HIKVISION_ISAPI.md cheatsheet
-- [ ] Tag v0.5-actions created
-- [ ] Commit + push done
+- [x] backend/actions/hikvision.py (Digest auth, ISAPI)
+- [x] relay_set(port, state, duration) works — verified URL+body against stand-in
+- [x] backend/actions/webhook.py (ntfy.sh, Discord, generic)
+- [x] backend/actions/logger.py — JSONL append, thread-safe
+- [x] backend/actions/dispatcher.py async coordinator — asyncio.to_thread, routes relay/webhook/log
+- [x] scripts/test_hikvision_relay.py created
+- [x] docs/HIKVISION_ISAPI.md cheatsheet
+- [x] Tag v0.5-actions created
+- [x] Commit + push done
+
+**Notes:** 8/8 checks against a local stand-in HTTP server (no camera/cloud). Real Hikvision device not on hand; ISAPI URL/body/method verified exactly. Digest auth wired (HTTPDigestAuth).
 
 ### PAS 11: FastAPI Backend + Pipeline
 **Status:** ⏳ TODO
@@ -315,6 +318,7 @@ Checklist:
 - 2026-06-05 20:30 | PAS 7 | ✅ DONE — ReferenceFrame + AdaptiveSampler 5/5, empty→no VLM; committed cd84065
 - 2026-06-05 20:40 | PAS 8 | ✅ DONE — AFP layer 4/4, 100 noisy→max 1/cooldown; committed 64529aa, tag v0.4-anti-false-positive
 - 2026-06-05 20:48 | PAS 9 | ✅ DONE — SQLAlchemy Condition/Event/Zone, CRUD 6/6; committed b0a65bb
+- 2026-06-05 21:00 | PAS 10 | ✅ DONE — action dispatcher (relay/webhook/log) 8/8 stand-in; committed 2489aae, tag v0.5-actions
 
 ## 🎓 Decision Log
 - **VLM model:** moondream (primary, fast, 1.7GB) + llama3.2-vision (fallback for hard SEMANTIC, 7.8GB). Replaces brief's `llava:7b` suggestion — both already pulled locally. User-approved.
