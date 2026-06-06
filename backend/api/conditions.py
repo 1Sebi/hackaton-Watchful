@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from backend.core.camera_manager import get_manager
 from backend.core.pipeline import get_pipeline
 from backend.database import get_db
-from backend.models import Condition
+from backend.models import Condition, Event
 from backend.predicates.compiler import VLMPredicateCompiler
 
 router = APIRouter(prefix="/conditions", tags=["conditions"])
@@ -92,6 +92,9 @@ def delete(cid: int, db: Session = Depends(get_db)):
     if not c:
         raise HTTPException(status_code=404, detail="condition not found")
     cam = c.camera_id
+    # also drop this rule's event history so deleting a rule doesn't leave orphan
+    # alerts lingering in the Live Activity feed
+    db.query(Event).filter_by(condition_id=cid).delete()
     db.delete(c)
     db.commit()
     get_manager().reload(cam)

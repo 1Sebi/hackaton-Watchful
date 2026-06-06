@@ -117,6 +117,10 @@ class CameraWorker:
         self.running = False
         self.error: Optional[str] = None
         self._src: Optional[VideoSource] = None
+        # serialize stream switches for this worker so rapid room changes can't
+        # stack up overlapping VideoSource opens that race on _src
+        self._switch_lock = threading.Lock()
+        self._placeholder: Optional[bytes] = None  # cached "connecting…" tile (no black)
         self._threads: List[threading.Thread] = []
         self._last_detect = 0.0
         # newest decoded+resized frame, stashed by the render loop so the detect
@@ -236,29 +240,35 @@ class CameraWorker:
         ran on that stale frame. Now ``_last_frame`` stays live throughout, so
         detection keeps firing on real video and boxes never stall on a switch.
         """
-        want, cont = self._desired_source()
-        if not self.running or self._cur_url == want:
-            return
-        try:
-            new = VideoSource(want, continuous=cont)
-        except Exception as e:  # noqa: BLE001
-            self.error = f"open failed: {e}"
-            return
-        # Wait for the new source to deliver a real frame before swapping. The
-        # old source keeps feeding the render loop until then (no frozen frame).
-        # Bounded so a dead 4K stream can't hang here forever — fall back to the
-        # swap anyway (render holds last frame, reconnect logic takes over).
-        deadline = time.time() + 8.0
-        while self.running and time.time() < deadline:
-            if new.read() is not None:
-                break
-            time.sleep(0.1)
-        old = self._src
-        self._src = new
-        self._cur_url = want
-        self.error = None
-        if old is not None:
-            old.release()
+        # Serialize: rapid room changes spawn one switch_stream per worker per
+        # change. The lock makes them run one at a time; each, once it holds the
+        # lock, re-reads what the source SHOULD be NOW — so a switch the user has
+        # already moved past becomes a no-op instead of opening a doomed 4K source
+        # and racing on self._src.
+        with self._switch_lock:
+            want, cont = self._desired_source()
+            if not self.running or self._cur_url == want:
+                return
+            try:
+                new = VideoSource(want, continuous=cont)
+            except Exception as e:  # noqa: BLE001
+                self.error = f"open failed: {e}"
+                return
+            # Wait for the new source to deliver a real frame before swapping. The
+            # old source keeps feeding the render loop until then (no frozen frame).
+            # Bounded so a dead 4K stream can't hang here forever — fall back to the
+            # swap anyway (render holds last frame / placeholder, reconnect takes over).
+            deadline = time.time() + 8.0
+            while self.running and time.time() < deadline:
+                if new.read() is not None:
+                    break
+                time.sleep(0.1)
+            old = self._src
+            self._src = new
+            self._cur_url = want
+            self.error = None
+            if old is not None:
+                old.release()
 
     def stop(self) -> None:
         self.running = False
@@ -266,6 +276,21 @@ class CameraWorker:
             t.join(timeout=2.0)
         if self._src is not None:
             self._src.release()
+
+    def _placeholder_jpeg(self) -> Optional[bytes]:
+        """A 'connecting…' tile shown while a (re)connecting source has no frame
+        yet, so a tile is NEVER black. Built once and cached."""
+        if self._placeholder is not None:
+            return self._placeholder
+        import numpy as _np
+        img = _np.full((360, 640, 3), 26, dtype=_np.uint8)  # dark gray
+        cv2.putText(img, self.name, (16, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.6,
+                    (210, 210, 210), 1)
+        cv2.putText(img, "connecting...", (16, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.5,
+                    (0, 200, 170), 1)
+        ok, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 70])
+        self._placeholder = buf.tobytes() if ok else None
+        return self._placeholder
 
     # ── render loop: smooth display, decoupled from detection ────────────
     def _render_loop(self) -> None:
@@ -287,7 +312,13 @@ class CameraWorker:
             frame = self._src.read() if self._src else None
             if frame is None:
                 # source still connecting / dropped -> hold the last published JPEG
-                # (no black gap on a stream swap) and try again shortly.
+                # (no black gap on a stream swap). If we have NO frame yet (a
+                # never-activated camera on its first connect), publish a
+                # "connecting…" placeholder so the tile is never black.
+                if self.latest_jpeg is None:
+                    ph = self._placeholder_jpeg()
+                    if ph is not None:
+                        self.latest_jpeg = ph
                 time.sleep(0.03)
                 continue
             frame = self._maybe_resize(frame)
