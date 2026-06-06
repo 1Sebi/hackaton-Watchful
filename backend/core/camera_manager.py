@@ -139,6 +139,17 @@ class CameraWorker:
         return self.manager.active_room_id == self.room
 
     @property
+    def is_focus(self) -> bool:
+        """True if THIS is the single camera the user is viewing (the big view).
+
+        Focus-only detection: the full YOLO budget goes to this one camera so it
+        stays smooth no matter how many cameras the room has. Other cameras in the
+        room still render (tiles) and get a light periodic people count, but they
+        are NOT run through per-frame detection / condition evaluation.
+        """
+        return self.manager.active_id == self.id
+
+    @property
     def vlm(self):  # used by the condition compiler via get_pipeline()
         return self.engine.vlm
 
@@ -195,11 +206,23 @@ class CameraWorker:
             t.start()
 
     def _desired_source(self):
-        """Which stream this worker should be on: 4K-continuous if active, else
-        light sub-stream on-demand."""
-        if self.is_active:
-            return self.main_url, True
-        return self.sub_url, False
+        """Which stream this worker should be on.
+
+        Only the single FOCUS camera (the one in the big view) opens the heavy
+        4K MAIN stream. Other cameras in the active room use the light 360p
+        SUB stream (continuous, so their tile + detection stay live). Inactive
+        cameras use the sub stream on-demand (tile counter only).
+
+        Rationale: the NVR can't sustain several simultaneous 4K main streams —
+        opening 4K on every room camera starved the non-focus grabbers and froze
+        their tiles. One 4K at a time (the focus) keeps the big view sharp while
+        every other feed stays reliably live on the cheap sub stream.
+        """
+        if not self.is_active:
+            return self.sub_url, False                      # inactive tile: on-demand
+        if self.manager.active_id == self.id:
+            return self.main_url, True                      # focus: 4K main, continuous
+        return self.sub_url, True                           # room, non-focus: sub, continuous
 
     def switch_stream(self) -> None:
         """Reopen on the stream that matches the current active/inactive state,
@@ -247,7 +270,19 @@ class CameraWorker:
     # ── render loop: smooth display, decoupled from detection ────────────
     def _render_loop(self) -> None:
         ema = None
+        last_pub = None  # timestamp of the previous published frame (for real FPS)
         while self.running:
+            # Inactive cameras are never displayed: the venue map shows text
+            # counts only, and the room view streams just the active room. So
+            # skip the costly decode+draw+JPEG-encode entirely for inactive
+            # cams and hand that CPU to the active room's detect loop (this is
+            # what lifts room detect_fps off the floor). The per-tile counter
+            # (_tile_count_tick) does its own cheap periodic grab for the map.
+            if not self.is_active:
+                self.fps = 0.0
+                last_pub = None
+                time.sleep(0.2)
+                continue
             t0 = time.time()
             frame = self._src.read() if self._src else None
             if frame is None:
@@ -258,38 +293,47 @@ class CameraWorker:
             frame = self._maybe_resize(frame)
             self._last_frame = frame  # detect loop + tile counter reuse this
             self.motion_pct = self.motion.score(frame)  # single writer of the gate
-            # Starvation guard: while a YOLO batch is in flight, the active camera
-            # skips the expensive draw+JPEG-encode for this tick and yields the CPU
-            # to detection. Keeps "AI ≥1/s" even at a higher RENDER_FPS. The viewer
-            # just holds the previous JPEG for a few ms — imperceptible.
-            if self.is_active and self.engine.detecting:
-                time.sleep(0.01)
-                continue
-            annotated = self._draw(frame, self.is_active)
+            # NOTE: no "skip publish while detecting" guard here. It used to throttle
+            # the active feed to roughly the detection rate (~3 fps = choppy video),
+            # because YOLO is in flight most of each detect cycle. Display and
+            # detection are truly decoupled: render publishes the latest frame +
+            # latest known boxes at RENDER_FPS; the detect loop runs in parallel and
+            # rate-caps itself. The box has CPU headroom for both.
+            # Full detection overlay (boxes/skeleton/HUD) only on the FOCUS camera;
+            # other room tiles get the light name+motion-dot overlay.
+            annotated = self._draw(frame, self.is_focus)
             ok, buf = cv2.imencode(".jpg", annotated, [cv2.IMWRITE_JPEG_QUALITY, 70])
             if ok:
                 self.latest_jpeg = buf.tobytes()
-            dt = time.time() - t0
-            inst = 1.0 / dt if dt > 0 else 0.0
-            ema = inst if ema is None else 0.9 * ema + 0.1 * inst
-            self.fps = round(ema, 1)
-            # Active camera renders smooth (RENDER_FPS); inactive tiles render
-            # slower (GRID_TILE_FPS) so the grid stays affordable on CPU.
-            target = settings.RENDER_FPS if self.is_active else settings.GRID_TILE_FPS
+            # Real publish FPS = inverse of the gap between published frames (NOT
+            # 1/work-time, which ignores the cap sleep below and reported absurd
+            # values like 500 for light 360p frames). This is the true cadence
+            # the viewer sees.
+            now = time.time()
+            if last_pub is not None:
+                gap = now - last_pub
+                inst = 1.0 / gap if gap > 0 else 0.0
+                ema = inst if ema is None else 0.9 * ema + 0.1 * inst
+                self.fps = round(ema, 1)
+            last_pub = now
+            # The FOCUS camera renders smooth (RENDER_FPS) for the big view; other
+            # room tiles render slower (GRID_TILE_FPS) so they stay affordable and
+            # leave CPU for the focus camera's detection.
+            target = settings.RENDER_FPS if self.is_focus else settings.GRID_TILE_FPS
             if target > 0:
                 time.sleep(max(0.0, (1.0 / target) - (time.time() - t0)))
 
-    # ── detect loop: only tile counter; real detection runs in the manager ──
+    # ── detect loop: tile counter for every NON-focus camera ────────────────
     def _detect_loop(self) -> None:
-        """Per-camera tile counter — refreshes ``tile_persons`` for inactive cams.
+        """Per-camera tile counter — refreshes ``tile_persons``.
 
-        Real detection (active room) is centralized in
-        ``CameraManager._room_detect_loop`` so all room cameras share a single
-        batched YOLO call. Inactive cameras periodically run a single-frame
-        ``detect()`` (no tracking) when the model lock is free.
+        Full per-frame detection runs ONLY on the focus camera, centralized in
+        ``CameraManager._room_detect_loop``. Every other camera (inactive rooms
+        AND non-focus cameras of the active room) just gets a light periodic
+        people count here, so its tile badge / map count stays alive cheaply.
         """
         while self.running:
-            if not self.is_active:
+            if not self.is_focus:
                 self._tile_count_tick()
             time.sleep(0.2)
 
@@ -307,9 +351,19 @@ class CameraWorker:
         now = time.time()
         if now - self._last_tile_count < interval:
             return
-        frame = self._last_frame  # the render loop's last sub-stream frame
+        # Active-room non-focus cameras already render, so reuse their fresh
+        # frame (no second decode). Inactive cameras don't render — grab one
+        # light 360p frame on demand (continuous=False decodes ~1 frame).
+        frame = self._last_frame if self.is_active else None
+        if frame is None and self._src is not None:
+            try:
+                raw = self._src.read()
+                frame = self._maybe_resize(raw) if raw is not None else None
+            except Exception:
+                frame = None
         if frame is None:
             return
+        self.motion_pct = self.motion.score(frame)  # keep the tile "moving" dot fresh
         if not self.engine.lock.acquire(blocking=False):
             return  # active camera is using the model — try again next tick
         try:
@@ -407,7 +461,9 @@ class CameraWorker:
         return {
             "id": self.id, "name": self.name, "room": self.room, "active": active,
             "fps": self.fps, "detect_fps": self.detect_fps,
-            "persons": self.tracker.active_count if active else self.tile_persons,
+            # focus camera reports its live tracked count; every other tile reports
+            # its periodic count (it isn't run through per-frame detection).
+            "persons": self.tracker.active_count if self.is_focus else self.tile_persons,
             "motion": round(self.motion_pct, 2),
             "moving": self.motion_pct >= settings.MOTION_MIN_PCT,
             "error": self.error,
@@ -559,25 +615,37 @@ class CameraManager:
             self._room_thread.start()
         return True
 
-    # ── room detect loop: batched YOLO over all cameras in active room ───
+    # ── detect loop: full-rate YOLO on the FOCUS camera only ────────────────
     def _room_detect_loop(self) -> None:
-        """Single shared loop that batched-detects every camera in the active
-        room each cycle, then dispatches per-camera tracking + condition eval.
+        """Single loop that detects the ONE focus camera each cycle, then does its
+        tracking + condition evaluation.
 
-        Costs ~1.5-3x of a single-frame detect for batches up to ~6 frames on
-        CPU (Ultralytics batches into one inference pass), so a 4-cam room at
-        DETECT_MAX_FPS=2 stays affordable. The lock prevents per-tile counters
-        from interleaving while a batch is in flight.
+        Focus-only: the whole YOLO budget goes to the camera the user is viewing,
+        so detection stays smooth (~5-6/s) regardless of how many cameras the room
+        has — instead of splitting across the room (a 6-cam room used to crawl at
+        ~1.6/s each). Other room cameras keep a light periodic count
+        (see _detect_loop). Conditions evaluate on the focus camera.
         """
         ema = None
+        last_cycle = None
         while not self._room_stop.is_set():
-            room_cams = self.cams_in_room(self.active_room_id)
+            focus = self.workers.get(self.active_id)
+            room_cams = [focus] if (focus is not None and focus.is_active) else []
             if not room_cams:
                 time.sleep(0.1)
                 continue
 
             target_fps = max(0.5, settings.DETECT_MAX_FPS)
             cycle_t0 = time.time()
+            # Real detection cadence = cycle-to-cycle period (includes the rate-cap
+            # sleep below), i.e. how often boxes actually refresh — NOT 1/YOLO-time,
+            # which overstates it (e.g. showed "11/s" while truly capped near 6).
+            if last_cycle is not None:
+                period = cycle_t0 - last_cycle
+                inst = 1.0 / period if period > 0 else 0.0
+                ema = inst if ema is None else 0.9 * ema + 0.1 * inst
+                self.room_detect_fps = round(ema, 1)
+            last_cycle = cycle_t0
 
             # gather freshest available frame from each room camera
             frames: List = []
@@ -640,17 +708,14 @@ class CameraManager:
                 w._last_detect = now
                 # per-camera detect_fps mirrors the room rate (shared budget)
 
-            dt = time.time() - t0
-            inst = 1.0 / dt if dt > 0 else 0.0
-            ema = inst if ema is None else 0.9 * ema + 0.1 * inst
-            self.room_detect_fps = round(ema, 1)
+            dt = time.time() - t0  # YOLO time (for the SLOW-cycle log below)
             for w in cams:
                 w.detect_fps = self.room_detect_fps
             # log slow batches so a perf regression is visible in uvicorn logs
             if dt > 1.5:
                 print(
                     f"[room-detect] SLOW cycle: {len(cams)} cams, "
-                    f"{dt:.2f}s, ema {ema:.2f}/s, model {self.engine.detector.model_path}",
+                    f"{dt:.2f}s yolo, {ema or 0.0:.2f}/s, model {self.engine.detector.model_path}",
                     flush=True,
                 )
 
@@ -673,7 +738,7 @@ class CameraManager:
             count = 0
             n_known = 0
             for w in cams:
-                v = w.tracker.active_count if w.is_active else w.tile_persons
+                v = w.tracker.active_count if w.is_focus else w.tile_persons
                 if v is not None:
                     count += v
                     n_known += 1

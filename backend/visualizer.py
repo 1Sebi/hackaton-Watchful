@@ -89,7 +89,8 @@ def _draw_hud(img, state):
 def draw_overlay(frame, dets, pose_map, tracker=None, state=None, zones=None):
     img = frame.copy()
     _draw_zones(img, zones)
-    _draw_trails(img, tracker)
+    # motion trails disabled (not needed right now) — re-enable by restoring
+    # _draw_trails(img, tracker) here.
     _draw_skeletons(img, pose_map)
     for d in dets:
         x1, y1, x2, y2 = d.bbox

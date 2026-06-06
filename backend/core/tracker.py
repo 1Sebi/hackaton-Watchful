@@ -44,16 +44,29 @@ def _iou(a: Tuple[int, int, int, int], b: Tuple[int, int, int, int]) -> float:
 
 
 class TrackManager:
-    def __init__(self, max_history: int = 64, prune_after: float = 5.0) -> None:
+    def __init__(
+        self,
+        max_history: int = 64,
+        prune_after: float = 5.0,
+        active_window: float = 1.5,
+    ) -> None:
         self.tracks: Dict[int, Track] = {}
         self.max_history = max_history
         self.prune_after = prune_after  # seconds since last_seen before forgetting
+        # A track is only COUNTED while it was seen within this window. Tracks
+        # linger up to prune_after (so brief occlusion / duration predicates keep
+        # working), but a stale/ghost track stops inflating active_count after
+        # active_window. This is what keeps the people count honest when detection
+        # runs fast on jittery low-confidence boxes (which mint short-lived ids).
+        self.active_window = active_window
+        self._now = 0.0  # last time the tracker was updated (for active_count)
         # used by update_iou to mint fresh ids when no ByteTrack id is supplied
         self._next_id = 1
 
     def update(self, detections: List[Detection], now: Optional[float] = None) -> Dict[int, Track]:
         """Fold this frame's detections into track state; prune stale tracks."""
         now = time.time() if now is None else now
+        self._now = now
         for d in detections:
             if d.track_id is None:
                 continue
@@ -90,6 +103,7 @@ class TrackManager:
         adequate per-camera at the kind of frame rates batched detection runs at.
         """
         now = time.time() if now is None else now
+        self._now = now
         used: set[int] = set()
         out: List[Detection] = []
         # Score every (det, track) pair, then assign greedily by descending IoU.
@@ -132,7 +146,16 @@ class TrackManager:
 
     @property
     def active_count(self) -> int:
-        return len(self.tracks)
+        """People currently present = tracks seen within ``active_window``.
+
+        Not ``len(self.tracks)`` — that includes ghost/stale tracks still held for
+        up to ``prune_after`` and badly over-counts when fast detection on jittery
+        boxes mints short-lived ids.
+        """
+        if not self.tracks:
+            return 0
+        cutoff = self._now - self.active_window
+        return sum(1 for t in self.tracks.values() if t.last_seen >= cutoff)
 
     def duration_of(self, track_id: int) -> float:
         t = self.tracks.get(track_id)
