@@ -1,27 +1,47 @@
 import { useEffect, useState, type ReactNode } from "react";
 import StatusBar from "./components/StatusBar";
-import CameraGrid from "./components/CameraGrid";
-import LiveView from "./components/LiveView";
+import HotelMap from "./components/HotelMap";
+import RoomView from "./components/RoomView";
 import ConditionEditor from "./components/ConditionEditor";
 import ConditionsList from "./components/ConditionsList";
 import EventLog from "./components/EventLog";
 import ZoneDrawer from "./components/ZoneDrawer";
-import { getCameras } from "./api";
+import { activateRoom, getRooms } from "./api";
+
+type View = { kind: "map" } | { kind: "room"; roomId: string };
 
 export default function App() {
   const [refresh, setRefresh] = useState(0);
   const [tab, setTab] = useState<"live" | "zones">("live");
+  const [view, setView] = useState<View>({ kind: "map" });
   const [activeId, setActiveId] = useState("");
 
+  // initial state: stay on the map; pick up whichever room is already active on
+  // the backend so the editing focus has a sensible default if user jumps in.
   useEffect(() => {
-    getCameras()
-      .then((s) => setActiveId(s.active))
+    getRooms()
+      .then((s) => {
+        if (s.active_room) {
+          const r = s.rooms.find((x) => x.id === s.active_room);
+          if (r && r.camera_ids.length > 0) setActiveId(r.camera_ids[0]);
+        }
+      })
       .catch(() => undefined);
   }, []);
 
-  const activate = (id: string) => {
-    setActiveId(id);
-    setRefresh((r) => r + 1); // re-scope conditions/zones to the new camera
+  const enterRoom = async (roomId: string) => {
+    // optimistic: switch UI immediately, fire backend activation in the back
+    setView({ kind: "room", roomId });
+    const res = await activateRoom(roomId).catch(() => null);
+    if (res) {
+      const r = res.rooms.find((x) => x.id === roomId);
+      if (r && r.camera_ids.length > 0) setActiveId(r.camera_ids[0]);
+    }
+    setRefresh((r) => r + 1);
+  };
+
+  const backToMap = () => {
+    setView({ kind: "map" });
   };
 
   return (
@@ -39,22 +59,51 @@ export default function App() {
 
       <main className="grid grid-cols-1 gap-4 p-4 lg:grid-cols-3">
         <section className="space-y-4 lg:col-span-2">
-          <CameraGrid activeId={activeId} onActivate={activate} />
-          <div className="flex gap-2">
-            <TabBtn active={tab === "live"} onClick={() => setTab("live")}>
-              Live
-            </TabBtn>
-            <TabBtn active={tab === "zones"} onClick={() => setTab("zones")}>
-              Zones
-            </TabBtn>
-          </div>
-          {tab === "live" ? <LiveView activeId={activeId} /> : <ZoneDrawer activeId={activeId} />}
+          {view.kind === "map" ? (
+            <HotelMap onEnterRoom={enterRoom} />
+          ) : (
+            <>
+              <RoomView
+                roomId={view.roomId}
+                activeId={activeId}
+                onSetActiveCam={(camId) => {
+                  setActiveId(camId);
+                  setRefresh((r) => r + 1);
+                }}
+                onBack={backToMap}
+              />
+              <div className="flex gap-2">
+                <TabBtn active={tab === "live"} onClick={() => setTab("live")}>
+                  Conditions & Events
+                </TabBtn>
+                <TabBtn active={tab === "zones"} onClick={() => setTab("zones")}>
+                  Zones
+                </TabBtn>
+              </div>
+              {tab === "zones" && <ZoneDrawer activeId={activeId} />}
+            </>
+          )}
         </section>
 
         <section className="space-y-4">
-          <ConditionEditor activeId={activeId} onAdded={() => setRefresh((r) => r + 1)} />
-          <ConditionsList activeId={activeId} refresh={refresh} />
-          <EventLog />
+          {view.kind === "room" && (
+            <>
+              <ConditionEditor activeId={activeId} onAdded={() => setRefresh((r) => r + 1)} />
+              <ConditionsList activeId={activeId} refresh={refresh} />
+              <EventLog />
+            </>
+          )}
+          {view.kind === "map" && (
+            <div className="rounded-xl border border-edge bg-black/20 p-4 text-sm text-slate-400">
+              <p className="mb-2 text-base font-semibold text-slate-200">How it works</p>
+              <ul className="list-disc space-y-1 pl-4 text-[12px]">
+                <li>Pick a room on the map to focus the AI on it.</li>
+                <li>All cameras in that room get detection at once (batched YOLO).</li>
+                <li>Other rooms stay light — only periodic people counts.</li>
+                <li>Conditions and zones bind to a focused camera inside the room.</li>
+              </ul>
+            </div>
+          )}
         </section>
       </main>
     </div>

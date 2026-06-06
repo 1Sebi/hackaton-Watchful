@@ -24,6 +24,14 @@ class Settings:
     VLM_MODEL: str = os.environ.get("VLM_MODEL", "moondream")
     VLM_MODEL_HEAVY: str = os.environ.get("VLM_MODEL_HEAVY", "llama3.2-vision")
     DETECTION_MODEL: str = os.environ.get("DETECTION_MODEL", "yolov8m.pt")
+    # Adaptive model tiers — picked by CameraManager based on how many cameras
+    # are in the active room. 1 cam → MODEL_SINGLE (max quality), 2-3 →
+    # MODEL_MULTI (balanced), 4+ → MODEL_CROWD (fast on big batches). The
+    # default detector (above) is loaded first and the others are lazy-loaded
+    # on the first room switch that needs them.
+    MODEL_SINGLE: str = os.environ.get("MODEL_SINGLE", "yolov8m.pt")
+    MODEL_MULTI: str = os.environ.get("MODEL_MULTI", "yolov8s.pt")
+    MODEL_CROWD: str = os.environ.get("MODEL_CROWD", "yolov8n.pt")
     POSE_MODEL: str = os.environ.get("POSE_MODEL", "yolov8n-pose.pt")
     DETECTION_CONFIDENCE: float = _f("DETECTION_CONFIDENCE", 0.25)
     # YOLO inference size (multiple of 32). Bigger recovers small/distant people

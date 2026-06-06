@@ -56,6 +56,26 @@ class _Engine:
         self.dispatcher = ActionDispatcher()
         # serialize model use so a camera switch can't run two detections at once
         self.lock = threading.Lock()
+        # cache of YOLO instances by path — lets us hot-swap to a lighter model
+        # when a many-camera room is opened, without paying the load cost twice.
+        from ultralytics import YOLO as _YOLO  # local import to keep top clean
+        self._YOLO = _YOLO
+        self._model_cache: Dict[str, object] = {self.detector.model_path: self.detector.model}
+
+    def use_model(self, path: str) -> None:
+        """Hot-swap the detector's underlying YOLO weights (cached). No-op when
+        already on that model. First load downloads + warms up (5-10s); cached
+        loads are instant.
+        """
+        if path == self.detector.model_path:
+            return
+        with self.lock:
+            model = self._model_cache.get(path)
+            if model is None:
+                model = self._YOLO(path)
+                self._model_cache[path] = model
+            self.detector.model = model
+            self.detector.model_path = path
 
 
 class CameraWorker:
@@ -105,7 +125,14 @@ class CameraWorker:
     # ── helpers ──────────────────────────────────────────────────────────
     @property
     def is_active(self) -> bool:
-        return self.manager.active_id == self.id
+        """True if THIS camera's room is the active room being analyzed.
+
+        Room-mode semantics: when the user opens 'Restaurant' all its cameras
+        are 'active' — they render at RENDER_FPS, open the 4K main stream, and
+        feed detections that the manager's room loop produces. Out of the
+        active room: light tile mode (sub-stream, GRID_TILE_FPS, count-only).
+        """
+        return self.manager.active_room_id == self.room
 
     @property
     def vlm(self):  # used by the condition compiler via get_pipeline()
@@ -226,71 +253,19 @@ class CameraWorker:
             if target > 0:
                 time.sleep(max(0.0, (1.0 / target) - (time.time() - t0)))
 
-    # ── detect loop: active camera only, motion-gated ────────────────────
+    # ── detect loop: only tile counter; real detection runs in the manager ──
     def _detect_loop(self) -> None:
-        ema = None
+        """Per-camera tile counter — refreshes ``tile_persons`` for inactive cams.
+
+        Real detection (active room) is centralized in
+        ``CameraManager._room_detect_loop`` so all room cameras share a single
+        batched YOLO call. Inactive cameras periodically run a single-frame
+        ``detect()`` (no tracking) when the model lock is free.
+        """
         while self.running:
             if not self.is_active:
-                self._tile_count_tick()   # keep this tile's people counter live
-                time.sleep(0.2)
-                continue
-            now = time.time()
-            # rate cap: analyze at most DETECT_MAX_FPS frames/sec (1 = once a second)
-            min_interval = 1.0 / settings.DETECT_MAX_FPS if settings.DETECT_MAX_FPS > 0 else 0.0
-            since = now - self._last_detect
-            if since < min_interval:
-                time.sleep(min(0.05, min_interval - since))
-                continue
-
-            # reuse the render loop's freshest decoded+resized frame (one decoder)
-            frame = self._last_frame
-            if frame is None:
-                time.sleep(0.03)
-                continue
-
-            # Active camera: skip the motion gate entirely. A seated person who
-            # doesn't move would otherwise drop out of detection for up to 5s,
-            # and the loop is already rate-capped by DETECT_MAX_FPS so CPU is
-            # bounded. (Inactive tiles still gate their tile-count via lock.)
-
-            t0 = time.time()
-            with self.engine.lock:
-                if not self.is_active:
-                    continue  # lost active while waiting on the lock
-                dets = self.engine.detector.detect_and_track(frame)
-                self.tracker.update(dets, now)
-                with self._cfg_lock:
-                    conditions = list(self._conditions)
-                    zones = dict(self._zones)
-                need_pose = any(
-                    c["enabled"] and c["predicate"].evaluator == "pose" for c in conditions
-                )
-                poses = self.engine.pose.analyze(frame) if need_pose else []
-                pose_map = self.engine.pose.associate(poses, dets) if need_pose else {}
-
-            with self._res_lock:
-                self._last_dets = dets
-                self._last_pose_map = pose_map
-
-            run_vlm = self.sampler.should_run_vlm(frame, now)
-            ctx = EvalContext(frame=frame, detections=dets, poses=poses, pose_map=pose_map,
-                              tracks=self.tracker.tracks, zones=zones, now=now)
-            for cond in conditions:
-                if not cond["enabled"]:
-                    continue
-                pred: Predicate = cond["predicate"]
-                if pred.evaluator == "vlm" and not run_vlm:
-                    continue
-                result = self.engine.evaluator.evaluate(pred, ctx)
-                fired, _ = self.afp.should_fire(pred, result, now)
-                if fired:
-                    self._on_fire(cond, result)
-
-            self._last_detect = now
-            dt = time.time() - t0
-            inst = 1.0 / dt if dt > 0 else 0.0
-            ema = inst if ema is None else 0.9 * ema + 0.1 * inst
-            self.detect_fps = round(ema, 1)
+                self._tile_count_tick()
+            time.sleep(0.2)
 
     # ── per-tile people count (inactive cameras) ────────────────────────
     def _tile_count_tick(self) -> None:
@@ -424,18 +399,57 @@ class CameraManager:
         for cam in settings.CAMERAS:
             self.workers[cam["id"]] = CameraWorker(cam, self.engine, self)
             self.order.append(cam["id"])
-        self.active_id: Optional[str] = (
-            settings.DEFAULT_ACTIVE if settings.DEFAULT_ACTIVE in self.workers
-            else (self.order[0] if self.order else None)
-        )
+        # active_room_id = which room the user is viewing (drives detection).
+        # active_id = which camera within that room is the "editing focus"
+        # (used by the conditions / zones panels).
+        self.active_room_id: Optional[str] = None
+        self.active_id: Optional[str] = None
         self._lock = threading.Lock()
+        # centralized room detect loop (batched YOLO over all cameras in the
+        # active room). Started/stopped on each set_active_room call.
+        self._room_thread: Optional[threading.Thread] = None
+        self._room_stop = threading.Event()
+        self.room_detect_fps: float = 0.0
 
     def start(self) -> None:
-        # connect cameras in parallel so one slow/dead stream can't block startup
+        # Set the default room BEFORE workers spin up, so each worker reads the
+        # right active_room_id when choosing its initial stream (main vs sub).
+        # Otherwise some default-room workers would race ahead and open the sub
+        # stream by mistake. After that we start workers in parallel (one slow/
+        # dead stream can't block startup) and spin up the centralized detect
+        # loop directly — bypasses set_active_room's tracker/reload work that
+        # is meaningless before workers exist.
+        default_room = self._room_of(settings.DEFAULT_ACTIVE)
+        if default_room is not None:
+            self.active_room_id = default_room
+            cams = self.cams_in_room(default_room)
+            self.active_id = (
+                settings.DEFAULT_ACTIVE
+                if settings.DEFAULT_ACTIVE in self.workers
+                else (cams[0].id if cams else None)
+            )
+            # adapt the model to the default room size in the background
+            n = len(cams)
+            target_model = (
+                settings.MODEL_SINGLE if n <= 1
+                else settings.MODEL_MULTI if n <= 3
+                else settings.MODEL_CROWD
+            )
+            threading.Thread(
+                target=self.engine.use_model, args=(target_model,), daemon=True
+            ).start()
+
         for w in self.workers.values():
             threading.Thread(target=w.start, daemon=True).start()
 
+        if self.active_room_id:
+            self._room_thread = threading.Thread(target=self._room_detect_loop, daemon=True)
+            self._room_thread.start()
+
     def stop(self) -> None:
+        self._room_stop.set()
+        if self._room_thread:
+            self._room_thread.join(timeout=2.0)
         for w in self.workers.values():
             w.stop()
 
@@ -445,34 +459,210 @@ class CameraManager:
     def get(self, cam_id: str) -> Optional[CameraWorker]:
         return self.workers.get(cam_id)
 
+    # ── room helpers ─────────────────────────────────────────────────────
+    def _room_of(self, cam_id: Optional[str]) -> Optional[str]:
+        if cam_id and cam_id in self.workers:
+            return self.workers[cam_id].room
+        return None
+
+    def cams_in_room(self, room: Optional[str]) -> List[CameraWorker]:
+        if not room:
+            return []
+        return [self.workers[i] for i in self.order if self.workers[i].room == room]
+
+    def rooms(self) -> List[Dict]:
+        """Distinct rooms with their cameras (preserves order)."""
+        seen: Dict[str, List[str]] = {}
+        order: List[str] = []
+        for i in self.order:
+            r = self.workers[i].room
+            if r not in seen:
+                seen[r] = []
+                order.append(r)
+            seen[r].append(i)
+        return [{"id": r, "name": r, "camera_ids": seen[r]} for r in order]
+
+    # ── activation: by camera (legacy) and by room ───────────────────────
     def set_active(self, cam_id: str) -> bool:
+        """Legacy single-camera activation: routes to the camera's room."""
         if cam_id not in self.workers:
             return False
-        old = self.workers.get(self.active_id) if self.active_id else None
+        return self.set_active_room(self.workers[cam_id].room, primary_cam=cam_id)
+
+    def set_active_room(self, room: Optional[str], primary_cam: Optional[str] = None) -> bool:
+        """Switch the active room: stops the previous room loop, swaps stream
+        modes (4K main for new room cams, sub-stream for old), resets trackers,
+        and starts a new centralized detect loop on the new room.
+        """
+        if room is not None and not self.cams_in_room(room):
+            return False
+        old_cams = self.cams_in_room(self.active_room_id)
+        new_cams = self.cams_in_room(room)
+
+        # stop the running room detect loop before we re-point trackers
+        self._room_stop.set()
+        if self._room_thread and self._room_thread.is_alive():
+            self._room_thread.join(timeout=2.0)
+        self._room_stop = threading.Event()
+
         with self._lock:
-            if old is not None and old.id != cam_id:
-                old.tracker.reset()
-                with old._res_lock:
-                    old._last_dets, old._last_pose_map = [], {}
-            self.active_id = cam_id
-            new = self.workers[cam_id]
-            new.tracker.reset()
-            with new._res_lock:
-                new._last_dets, new._last_pose_map = [], {}
-            self.engine.detector.reset_tracker()
-            new.reload()
-        # upgrade the new active camera to 4K, drop the old one back to the light
-        # sub-stream — in the background (4K connect ~2s; render holds last frame).
-        threading.Thread(target=new.switch_stream, daemon=True).start()
-        if old is not None and old.id != cam_id:
-            threading.Thread(target=old.switch_stream, daemon=True).start()
+            # reset state on cameras moving in/out of the active set
+            for w in set(old_cams) | set(new_cams):
+                w.tracker.reset()
+                with w._res_lock:
+                    w._last_dets, w._last_pose_map = [], {}
+            self.active_room_id = room
+            # pick a primary camera within the room (for editing focus)
+            if primary_cam and primary_cam in self.workers and self.workers[primary_cam] in new_cams:
+                self.active_id = primary_cam
+            else:
+                self.active_id = new_cams[0].id if new_cams else None
+            # condition/zone reload so per-camera rules re-bind correctly
+            for w in new_cams:
+                w.reload()
+
+        # stream swaps in background (4K connect ~2s; render holds last frame)
+        for w in old_cams:
+            if w not in new_cams:
+                threading.Thread(target=w.switch_stream, daemon=True).start()
+        for w in new_cams:
+            threading.Thread(target=w.switch_stream, daemon=True).start()
+
+        # adapt the model to the room size (more cams = lighter model so the
+        # batched detect stays real-time on CPU). Off the request path — the
+        # very first switch to a new model can take 5-10s to load.
+        if new_cams:
+            n = len(new_cams)
+            target_model = (
+                settings.MODEL_SINGLE if n <= 1
+                else settings.MODEL_MULTI if n <= 3
+                else settings.MODEL_CROWD
+            )
+            threading.Thread(
+                target=self.engine.use_model, args=(target_model,), daemon=True
+            ).start()
+
+        # spin up a fresh room loop (no-op if room is None)
+        if new_cams:
+            self._room_thread = threading.Thread(target=self._room_detect_loop, daemon=True)
+            self._room_thread.start()
         return True
+
+    # ── room detect loop: batched YOLO over all cameras in active room ───
+    def _room_detect_loop(self) -> None:
+        """Single shared loop that batched-detects every camera in the active
+        room each cycle, then dispatches per-camera tracking + condition eval.
+
+        Costs ~1.5-3x of a single-frame detect for batches up to ~6 frames on
+        CPU (Ultralytics batches into one inference pass), so a 4-cam room at
+        DETECT_MAX_FPS=2 stays affordable. The lock prevents per-tile counters
+        from interleaving while a batch is in flight.
+        """
+        ema = None
+        while not self._room_stop.is_set():
+            room_cams = self.cams_in_room(self.active_room_id)
+            if not room_cams:
+                time.sleep(0.1)
+                continue
+
+            target_fps = max(0.5, settings.DETECT_MAX_FPS)
+            cycle_t0 = time.time()
+
+            # gather freshest available frame from each room camera
+            frames: List = []
+            cams: List[CameraWorker] = []
+            for w in room_cams:
+                f = w._last_frame
+                if f is not None:
+                    frames.append(f)
+                    cams.append(w)
+            if not frames:
+                time.sleep(0.05)
+                continue
+
+            t0 = time.time()
+            try:
+                with self.engine.lock:
+                    batch_dets = self.engine.detector.detect_batch(frames)
+            except Exception as e:  # noqa: BLE001
+                # one bad frame shouldn't kill the loop
+                batch_dets = [[] for _ in frames]
+                _ = e
+
+            now = time.time()
+            for w, frame, dets in zip(cams, frames, batch_dets):
+                tracked = w.tracker.update_iou(dets, now)
+                with w._res_lock:
+                    w._last_dets = tracked
+
+                with w._cfg_lock:
+                    conditions = list(w._conditions)
+                    zones = dict(w._zones)
+
+                need_pose = any(
+                    c["enabled"] and c["predicate"].evaluator == "pose" for c in conditions
+                )
+                # pose runs per-camera (small model, only when a pose rule is on)
+                poses = self.engine.pose.analyze(frame) if need_pose else []
+                pose_map = self.engine.pose.associate(poses, tracked) if need_pose else {}
+                with w._res_lock:
+                    w._last_pose_map = pose_map
+
+                run_vlm = w.sampler.should_run_vlm(frame, now)
+                ctx = EvalContext(
+                    frame=frame, detections=tracked, poses=poses, pose_map=pose_map,
+                    tracks=w.tracker.tracks, zones=zones, now=now,
+                )
+                for cond in conditions:
+                    if not cond["enabled"]:
+                        continue
+                    pred: Predicate = cond["predicate"]
+                    if pred.evaluator == "vlm" and not run_vlm:
+                        continue
+                    result = self.engine.evaluator.evaluate(pred, ctx)
+                    fired, _ = w.afp.should_fire(pred, result, now)
+                    if fired:
+                        w._on_fire(cond, result)
+                w._last_detect = now
+                # per-camera detect_fps mirrors the room rate (shared budget)
+
+            dt = time.time() - t0
+            inst = 1.0 / dt if dt > 0 else 0.0
+            ema = inst if ema is None else 0.9 * ema + 0.1 * inst
+            self.room_detect_fps = round(ema, 1)
+            for w in cams:
+                w.detect_fps = self.room_detect_fps
+
+            # rate cap: the whole batch is ONE detection cycle for the room
+            elapsed = time.time() - cycle_t0
+            time.sleep(max(0.0, 1.0 / target_fps - elapsed))
 
     def cameras_state(self) -> dict:
         return {
             "active": self.active_id,
-            "cameras": [self.workers[i].tile_state(i == self.active_id) for i in self.order],
+            "active_room": self.active_room_id,
+            "cameras": [self.workers[i].tile_state(self.workers[i].is_active) for i in self.order],
         }
+
+    def rooms_state(self) -> dict:
+        """Summary for the landing map: one entry per room with last counts."""
+        out = []
+        for r in self.rooms():
+            cams = self.cams_in_room(r["id"])
+            count = 0
+            n_known = 0
+            for w in cams:
+                v = w.tracker.active_count if w.is_active else w.tile_persons
+                if v is not None:
+                    count += v
+                    n_known += 1
+            out.append({
+                "id": r["id"], "name": r["name"],
+                "camera_ids": r["camera_ids"], "n_cameras": len(cams),
+                "persons": count if n_known else None,
+                "active": r["id"] == self.active_room_id,
+            })
+        return {"active_room": self.active_room_id, "rooms": out}
 
     def reload(self, cam_id: Optional[str] = None) -> None:
         if cam_id and cam_id in self.workers:

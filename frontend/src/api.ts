@@ -90,6 +90,27 @@ export async function getCameras(): Promise<CamerasState> {
 export async function activateCamera(id: string): Promise<CamerasState> {
   return postJSON<CamerasState>(`/cameras/${id}/activate`, {});
 }
+
+export interface RoomTile {
+  id: string;
+  name: string;
+  camera_ids: string[];
+  n_cameras: number;
+  persons: number | null;
+  active: boolean;
+}
+export interface RoomsState {
+  active_room: string | null;
+  rooms: RoomTile[];
+}
+export async function getRooms(): Promise<RoomsState> {
+  return getJSON<RoomsState>("/rooms");
+}
+export async function activateRoom(id: string, primaryCam?: string): Promise<RoomsState> {
+  return postJSON<RoomsState>(`/rooms/${id}/activate`, {
+    primary_cam: primaryCam ?? null,
+  });
+}
 export interface Zone {
   id: number;
   name: string;
