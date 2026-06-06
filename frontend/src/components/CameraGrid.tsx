@@ -22,7 +22,7 @@ export default function CameraGrid({
         .then((s) => !stop && setCams(s.cameras))
         .catch(() => undefined);
     tick();
-    const h = window.setInterval(tick, 3000);
+    const h = window.setInterval(tick, 5000);
     return () => {
       stop = true;
       window.clearInterval(h);
@@ -57,6 +57,8 @@ export default function CameraGrid({
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
       {rooms.map(({ room, cams: rc }) => {
         const count = roomCount(rc);
+        // the active camera is shown in the big view — don't stream it twice
+        const tiles = rc.filter((c) => c.id !== activeId);
         return (
           <div key={room} className="rounded-xl border border-edge bg-black/20 p-2">
             <div className="mb-2 flex items-center justify-between px-1">
@@ -65,8 +67,8 @@ export default function CameraGrid({
                 🧍 {count == null ? "—" : count}
               </span>
             </div>
-            <div className={`grid gap-1 ${rc.length > 1 ? "grid-cols-2" : "grid-cols-1"}`}>
-              {rc.map((c) => (
+            <div className={`grid gap-1 ${tiles.length > 1 ? "grid-cols-2" : "grid-cols-1"}`}>
+              {tiles.map((c) => (
                 <button
                   key={c.id}
                   onClick={() => click(c.id)}
