@@ -34,9 +34,12 @@ class Settings:
     MODEL_CROWD: str = os.environ.get("MODEL_CROWD", "yolov8n.pt")
     POSE_MODEL: str = os.environ.get("POSE_MODEL", "yolov8n-pose.pt")
     DETECTION_CONFIDENCE: float = _f("DETECTION_CONFIDENCE", 0.25)
-    # YOLO inference size (multiple of 32). Bigger recovers small/distant people
-    # on wide overhead shots at the cost of CPU. 640 = default, 960 = recommended.
-    DETECTION_IMGSZ: int = int(_f("DETECTION_IMGSZ", 960))
+    # YOLO inference size (multiple of 32). 640 = default; 960 was nicer for
+    # very small/distant people but on CPU it costs 2-3x and starved the room
+    # detect loop (~0.4 FPS effective → HUD displayed "AI 0/s" + tracks died
+    # between detections). 640 is the sweet spot: fast enough on yolov8m/s/n
+    # CPU to stay real-time, still ample for indoor venue scenes.
+    DETECTION_IMGSZ: int = int(_f("DETECTION_IMGSZ", 640))
     # Resize each captured frame to this width before detection/draw/encode.
     # Lets you capture a sharp high-res stream (even 4K main) while keeping YOLO
     # fast on CPU. 0 = no resize (use the native stream resolution).
@@ -56,8 +59,11 @@ class Settings:
     STREAM_FPS: float = _f("STREAM_FPS", 1.0)
     # Display refresh for the ACTIVE camera (the big tile under focus). Decoupled
     # from detection: detection runs at DETECT_MAX_FPS, render publishes at this
-    # rate for smooth video. 12-15 looks fluid; 20 is overkill for surveillance.
-    RENDER_FPS: float = _f("RENDER_FPS", 20.0)
+    # rate for smooth video. 10 is plenty smooth for surveillance and leaves
+    # CPU room for the room detect loop. 20 looked nice but starved detection
+    # on CPU-only boxes (20 fps × 4K-decode+resize+jpeg-encode per active cam
+    # competed for CPU with yolov8m inference → AI rate fell under 1/s).
+    RENDER_FPS: float = _f("RENDER_FPS", 10.0)
     # Display refresh for INACTIVE tiles. Lower saves CPU — we mostly need to see
     # movement, not 30 fps. 4-6 is the sweet spot for an N-camera grid on CPU.
     GRID_TILE_FPS: float = _f("GRID_TILE_FPS", 4.0)

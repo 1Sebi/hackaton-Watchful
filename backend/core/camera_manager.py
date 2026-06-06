@@ -632,6 +632,13 @@ class CameraManager:
             self.room_detect_fps = round(ema, 1)
             for w in cams:
                 w.detect_fps = self.room_detect_fps
+            # log slow batches so a perf regression is visible in uvicorn logs
+            if dt > 1.5:
+                print(
+                    f"[room-detect] SLOW cycle: {len(cams)} cams, "
+                    f"{dt:.2f}s, ema {ema:.2f}/s, model {self.engine.detector.model_path}",
+                    flush=True,
+                )
 
             # rate cap: the whole batch is ONE detection cycle for the room
             elapsed = time.time() - cycle_t0

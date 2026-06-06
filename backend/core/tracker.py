@@ -44,7 +44,7 @@ def _iou(a: Tuple[int, int, int, int], b: Tuple[int, int, int, int]) -> float:
 
 
 class TrackManager:
-    def __init__(self, max_history: int = 64, prune_after: float = 2.0) -> None:
+    def __init__(self, max_history: int = 64, prune_after: float = 5.0) -> None:
         self.tracks: Dict[int, Track] = {}
         self.max_history = max_history
         self.prune_after = prune_after  # seconds since last_seen before forgetting
