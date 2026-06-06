@@ -56,6 +56,10 @@ class _Engine:
         self.dispatcher = ActionDispatcher()
         # serialize model use so a camera switch can't run two detections at once
         self.lock = threading.Lock()
+        # True while a YOLO batch is in flight. The active camera's render loop
+        # backs off (skips its JPEG encode that tick) when this is set, so a
+        # higher RENDER_FPS can't steal CPU from detection and drive "AI 0/s".
+        self.detecting = False
         # cache of YOLO instances by path — lets us hot-swap to a lighter model
         # when a many-camera room is opened, without paying the load cost twice.
         from ultralytics import YOLO as _YOLO  # local import to keep top clean
@@ -198,10 +202,16 @@ class CameraWorker:
         return self.sub_url, False
 
     def switch_stream(self) -> None:
-        """Reopen on the stream that matches the current active/inactive state.
+        """Reopen on the stream that matches the current active/inactive state,
+        via an ATOMIC handoff so the feed never freezes.
 
-        Off the request path (4K can take ~2s to connect). The render loop keeps
-        showing the last frame while the new source warms up — no flicker.
+        Off the request path (4K can take ~2s to connect). Critically, we keep
+        the render loop reading the OLD source (live sub-stream) until the NEW
+        source produces its first real frame, THEN swap. Previously the swap
+        happened immediately and released the old source, so ``_last_frame``
+        froze for 2-5s while the 4K stream connected — and the room detect loop
+        ran on that stale frame. Now ``_last_frame`` stays live throughout, so
+        detection keeps firing on real video and boxes never stall on a switch.
         """
         want, cont = self._desired_source()
         if not self.running or self._cur_url == want:
@@ -211,6 +221,15 @@ class CameraWorker:
         except Exception as e:  # noqa: BLE001
             self.error = f"open failed: {e}"
             return
+        # Wait for the new source to deliver a real frame before swapping. The
+        # old source keeps feeding the render loop until then (no frozen frame).
+        # Bounded so a dead 4K stream can't hang here forever — fall back to the
+        # swap anyway (render holds last frame, reconnect logic takes over).
+        deadline = time.time() + 8.0
+        while self.running and time.time() < deadline:
+            if new.read() is not None:
+                break
+            time.sleep(0.1)
         old = self._src
         self._src = new
         self._cur_url = want
@@ -239,6 +258,13 @@ class CameraWorker:
             frame = self._maybe_resize(frame)
             self._last_frame = frame  # detect loop + tile counter reuse this
             self.motion_pct = self.motion.score(frame)  # single writer of the gate
+            # Starvation guard: while a YOLO batch is in flight, the active camera
+            # skips the expensive draw+JPEG-encode for this tick and yields the CPU
+            # to detection. Keeps "AI ≥1/s" even at a higher RENDER_FPS. The viewer
+            # just holds the previous JPEG for a few ms — imperceptible.
+            if self.is_active and self.engine.detecting:
+                time.sleep(0.01)
+                continue
             annotated = self._draw(frame, self.is_active)
             ok, buf = cv2.imencode(".jpg", annotated, [cv2.IMWRITE_JPEG_QUALITY, 70])
             if ok:
@@ -428,16 +454,11 @@ class CameraManager:
                 if settings.DEFAULT_ACTIVE in self.workers
                 else (cams[0].id if cams else None)
             )
-            # adapt the model to the default room size in the background
-            n = len(cams)
-            target_model = (
-                settings.MODEL_SINGLE if n <= 1
-                else settings.MODEL_MULTI if n <= 3
-                else settings.MODEL_CROWD
-            )
-            threading.Thread(
-                target=self.engine.use_model, args=(target_model,), daemon=True
-            ).start()
+            # NOTE: no per-room model swap. The detector loaded at startup
+            # (yolov8m @ DETECTION_IMGSZ) stays warm for every room — swapping
+            # models per room paid a 5-10s cold load under engine.lock on the
+            # first switch to each size, stalling the room detect loop. One
+            # always-warm model removes that stall entirely.
 
         for w in self.workers.values():
             threading.Thread(target=w.start, daemon=True).start()
@@ -528,19 +549,9 @@ class CameraManager:
         for w in new_cams:
             threading.Thread(target=w.switch_stream, daemon=True).start()
 
-        # adapt the model to the room size (more cams = lighter model so the
-        # batched detect stays real-time on CPU). Off the request path — the
-        # very first switch to a new model can take 5-10s to load.
-        if new_cams:
-            n = len(new_cams)
-            target_model = (
-                settings.MODEL_SINGLE if n <= 1
-                else settings.MODEL_MULTI if n <= 3
-                else settings.MODEL_CROWD
-            )
-            threading.Thread(
-                target=self.engine.use_model, args=(target_model,), daemon=True
-            ).start()
+        # NOTE: no per-room model swap (see start()). The startup model stays
+        # warm for every room, so a switch never pays a 5-10s cold load under
+        # engine.lock — the room detect loop fires on the very first cycle.
 
         # spin up a fresh room loop (no-op if room is None)
         if new_cams:
@@ -582,12 +593,15 @@ class CameraManager:
 
             t0 = time.time()
             try:
+                self.engine.detecting = True  # signal render loop to back off
                 with self.engine.lock:
                     batch_dets = self.engine.detector.detect_batch(frames)
             except Exception as e:  # noqa: BLE001
                 # one bad frame shouldn't kill the loop
                 batch_dets = [[] for _ in frames]
                 _ = e
+            finally:
+                self.engine.detecting = False
 
             now = time.time()
             for w, frame, dets in zip(cams, frames, batch_dets):

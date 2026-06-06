@@ -59,17 +59,19 @@ class Settings:
     STREAM_FPS: float = _f("STREAM_FPS", 1.0)
     # Display refresh for the ACTIVE camera (the big tile under focus). Decoupled
     # from detection: detection runs at DETECT_MAX_FPS, render publishes at this
-    # rate for smooth video. 10 is plenty smooth for surveillance and leaves
-    # CPU room for the room detect loop. 20 looked nice but starved detection
-    # on CPU-only boxes (20 fps × 4K-decode+resize+jpeg-encode per active cam
-    # competed for CPU with yolov8m inference → AI rate fell under 1/s).
-    RENDER_FPS: float = _f("RENDER_FPS", 10.0)
+    # rate for smooth video. 12 is smooth and safe now that the render loop yields
+    # to detection while a YOLO batch is in flight (engine.detecting guard), so
+    # the active feed can't starve the detect loop. 20 still risks "AI 0/s" on
+    # CPU-only boxes — don't exceed ~12 without watching the SLOW-cycle log.
+    RENDER_FPS: float = _f("RENDER_FPS", 12.0)
     # Display refresh for INACTIVE tiles. Lower saves CPU — we mostly need to see
     # movement, not 30 fps. 4-6 is the sweet spot for an N-camera grid on CPU.
     GRID_TILE_FPS: float = _f("GRID_TILE_FPS", 4.0)
-    # Cap how often the active camera actually runs YOLO. 1 = analyze one frame
-    # per second (plenty for an emergency monitor; makes a sharp 4K feed affordable).
-    DETECT_MAX_FPS: float = _f("DETECT_MAX_FPS", 5.0)
+    # Cap how often the active room actually runs batched YOLO. This is the rate
+    # detection boxes refresh, so it drives how "snappy" detection feels. 6 is a
+    # touch quicker than 5 while staying affordable for a room batch on CPU at
+    # imgsz 640. Watch the [room-detect] SLOW cycle log; drop back to 5 if AI<1.5/s.
+    DETECT_MAX_FPS: float = _f("DETECT_MAX_FPS", 6.0)
     # Inactive cameras refresh their tile people-count this often (seconds). They
     # only count when the shared model lock is free, so they never slow the active
     # camera. 0 disables per-tile counting. ~8s keeps every tile live cheaply.

@@ -94,7 +94,7 @@ export default function RoomView({
           No cameras configured for this room yet.
         </div>
       ) : (
-        <div className={`grid gap-2 ${cols}`}>
+        <div className={`grid auto-rows-fr gap-2 ${cols}`}>
           {cams.map((c) => (
             <button
               key={c.id}

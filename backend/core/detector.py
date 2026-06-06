@@ -15,6 +15,8 @@ from typing import List, Optional, Tuple
 import numpy as np
 from ultralytics import YOLO
 
+from backend.config import settings
+
 
 def _env(key: str, default: str) -> str:
     v = os.environ.get(key)
@@ -55,16 +57,21 @@ class PersonDetector:
         conf: Optional[float] = None,
         tracker: str = "bytetrack.yaml",
     ) -> None:
-        self.model_path = model_path or _env("DETECTION_MODEL", "yolov8m.pt")
-        self.conf = float(conf if conf is not None else _env("DETECTION_CONFIDENCE", "0.25"))
+        # Read model/conf/imgsz from the central Settings (config.py) so there is
+        # ONE source of truth. config.py already loads .env, so an operator who
+        # pins DETECTION_IMGSZ/MODEL in .env still wins — but a *missing* key now
+        # falls back to config's CPU-tuned defaults (imgsz 640), not a stray 960
+        # that silently ran detection 2-3x slower on CPU.
+        self.model_path = model_path or settings.DETECTION_MODEL
+        self.conf = float(conf if conf is not None else settings.DETECTION_CONFIDENCE)
         # NMS IoU — Ultralytics default 0.7 is too aggressive for dense rooms
         # (two people standing close share a lot of bbox area and one gets
         # suppressed). 0.5 keeps overlapping persons distinct.
         self.iou = float(_env("DETECTION_IOU", "0.5"))
         # Inference letterbox size. Larger = small/distant people keep enough
-        # pixels to be detected (the dominant recall lever on wide overhead
-        # shots). Must be a multiple of 32. 640 = YOLO default; 960 recommended.
-        self.imgsz = int(_env("DETECTION_IMGSZ", "960"))
+        # pixels to be detected, but on CPU 960 costs 2-3x and starves the room
+        # detect loop. config.py default is 640 (the documented CPU sweet spot).
+        self.imgsz = int(settings.DETECTION_IMGSZ)
         self.tracker = tracker
         self.model = YOLO(self.model_path)
 
