@@ -55,8 +55,12 @@ class PersonDetector:
         conf: Optional[float] = None,
         tracker: str = "bytetrack.yaml",
     ) -> None:
-        self.model_path = model_path or _env("DETECTION_MODEL", "yolov8n.pt")
-        self.conf = float(conf if conf is not None else _env("DETECTION_CONFIDENCE", "0.5"))
+        self.model_path = model_path or _env("DETECTION_MODEL", "yolov8m.pt")
+        self.conf = float(conf if conf is not None else _env("DETECTION_CONFIDENCE", "0.25"))
+        # NMS IoU — Ultralytics default 0.7 is too aggressive for dense rooms
+        # (two people standing close share a lot of bbox area and one gets
+        # suppressed). 0.5 keeps overlapping persons distinct.
+        self.iou = float(_env("DETECTION_IOU", "0.5"))
         # Inference letterbox size. Larger = small/distant people keep enough
         # pixels to be detected (the dominant recall lever on wide overhead
         # shots). Must be a multiple of 32. 640 = YOLO default; 960 recommended.
@@ -86,6 +90,7 @@ class PersonDetector:
             persist=True,
             classes=[0],
             conf=self.conf,
+            iou=self.iou,
             imgsz=self.imgsz,
             verbose=False,
             tracker=self.tracker,
@@ -96,7 +101,9 @@ class PersonDetector:
 
     def detect(self, frame: np.ndarray) -> List[Detection]:
         """Plain detection (no tracking); ``track_id`` is ``None``."""
-        results = self.model.predict(frame, classes=[0], conf=self.conf, imgsz=self.imgsz, verbose=False)
+        results = self.model.predict(
+            frame, classes=[0], conf=self.conf, iou=self.iou, imgsz=self.imgsz, verbose=False
+        )
         if not results:
             return []
         return self._boxes_to_detections(results[0])

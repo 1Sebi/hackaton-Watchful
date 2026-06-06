@@ -23,9 +23,9 @@ class Settings:
     OLLAMA_BASE_URL: str = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
     VLM_MODEL: str = os.environ.get("VLM_MODEL", "moondream")
     VLM_MODEL_HEAVY: str = os.environ.get("VLM_MODEL_HEAVY", "llama3.2-vision")
-    DETECTION_MODEL: str = os.environ.get("DETECTION_MODEL", "yolov8n.pt")
+    DETECTION_MODEL: str = os.environ.get("DETECTION_MODEL", "yolov8m.pt")
     POSE_MODEL: str = os.environ.get("POSE_MODEL", "yolov8n-pose.pt")
-    DETECTION_CONFIDENCE: float = _f("DETECTION_CONFIDENCE", 0.5)
+    DETECTION_CONFIDENCE: float = _f("DETECTION_CONFIDENCE", 0.25)
     # YOLO inference size (multiple of 32). Bigger recovers small/distant people
     # on wide overhead shots at the cost of CPU. 640 = default, 960 = recommended.
     DETECTION_IMGSZ: int = int(_f("DETECTION_IMGSZ", 960))
@@ -43,12 +43,19 @@ class Settings:
     # % of pixels that must change frame-to-frame for the OpenCV motion gate to
     # consider the scene "moving" and run YOLO (lower = more sensitive).
     MOTION_MIN_PCT: float = _f("MOTION_MIN_PCT", 0.6)
-    # Feed refresh for EVERY camera (single 4K main stream). 1 fps keeps many
-    # 4K decodes affordable; raise only if the box has headroom.
+    # Legacy single-FPS knob (used as fallback if RENDER_FPS / GRID_TILE_FPS
+    # aren't set). Kept for backward compat; new code should branch on is_active.
     STREAM_FPS: float = _f("STREAM_FPS", 1.0)
+    # Display refresh for the ACTIVE camera (the big tile under focus). Decoupled
+    # from detection: detection runs at DETECT_MAX_FPS, render publishes at this
+    # rate for smooth video. 12-15 looks fluid; 20 is overkill for surveillance.
+    RENDER_FPS: float = _f("RENDER_FPS", 12.0)
+    # Display refresh for INACTIVE tiles. Lower saves CPU — we mostly need to see
+    # movement, not 30 fps. 4-6 is the sweet spot for an N-camera grid on CPU.
+    GRID_TILE_FPS: float = _f("GRID_TILE_FPS", 4.0)
     # Cap how often the active camera actually runs YOLO. 1 = analyze one frame
     # per second (plenty for an emergency monitor; makes a sharp 4K feed affordable).
-    DETECT_MAX_FPS: float = _f("DETECT_MAX_FPS", 1.0)
+    DETECT_MAX_FPS: float = _f("DETECT_MAX_FPS", 5.0)
     # Inactive cameras refresh their tile people-count this often (seconds). They
     # only count when the shared model lock is free, so they never slow the active
     # camera. 0 disables per-tile counting. ~8s keeps every tile live cheaply.

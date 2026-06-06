@@ -178,7 +178,9 @@ class CameraWorker:
             inst = 1.0 / dt if dt > 0 else 0.0
             ema = inst if ema is None else 0.9 * ema + 0.1 * inst
             self.fps = round(ema, 1)
-            target = settings.STREAM_FPS
+            # Active camera renders smooth (RENDER_FPS); inactive tiles render
+            # slower (GRID_TILE_FPS) so the grid stays affordable on CPU.
+            target = settings.RENDER_FPS if self.is_active else settings.GRID_TILE_FPS
             if target > 0:
                 time.sleep(max(0.0, (1.0 / target) - (time.time() - t0)))
 
@@ -204,11 +206,10 @@ class CameraWorker:
                 continue
             frame = self._maybe_resize(frame)
 
-            moving = self.motion_pct >= settings.MOTION_MIN_PCT
-            forced = since >= 5.0  # refresh a fully static scene at least every 5s
-            if not (moving or forced):
-                time.sleep(0.05)  # OpenCV motion gate: static scene -> skip YOLO
-                continue
+            # Active camera: skip the motion gate entirely. A seated person who
+            # doesn't move would otherwise drop out of detection for up to 5s,
+            # and the loop is already rate-capped by DETECT_MAX_FPS so CPU is
+            # bounded. (Inactive tiles still gate their tile-count via lock.)
 
             t0 = time.time()
             with self.engine.lock:
