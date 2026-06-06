@@ -1,18 +1,16 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState } from "react";
 import StatusBar from "./components/StatusBar";
 import HotelMap from "./components/HotelMap";
 import RoomView from "./components/RoomView";
-import ConditionEditor from "./components/ConditionEditor";
-import ConditionsList from "./components/ConditionsList";
-import EventLog from "./components/EventLog";
 import ZoneDrawer from "./components/ZoneDrawer";
 import { activateRoom, getRooms } from "./api";
+// NOTE: ConditionEditor / ConditionsList / EventLog are intentionally not
+// rendered (UI hidden per user request). The components still live under
+// ./components and can be re-mounted in the right column anytime.
 
 type View = { kind: "map" } | { kind: "room"; roomId: string };
 
 export default function App() {
-  const [refresh, setRefresh] = useState(0);
-  const [tab, setTab] = useState<"live" | "zones">("live");
   const [view, setView] = useState<View>({ kind: "map" });
   const [activeId, setActiveId] = useState("");
 
@@ -37,7 +35,6 @@ export default function App() {
       const r = res.rooms.find((x) => x.id === roomId);
       if (r && r.camera_ids.length > 0) setActiveId(r.camera_ids[0]);
     }
-    setRefresh((r) => r + 1);
   };
 
   const backToMap = () => {
@@ -66,33 +63,15 @@ export default function App() {
               <RoomView
                 roomId={view.roomId}
                 activeId={activeId}
-                onSetActiveCam={(camId) => {
-                  setActiveId(camId);
-                  setRefresh((r) => r + 1);
-                }}
+                onSetActiveCam={(camId) => setActiveId(camId)}
                 onBack={backToMap}
               />
-              <div className="flex gap-2">
-                <TabBtn active={tab === "live"} onClick={() => setTab("live")}>
-                  Conditions & Events
-                </TabBtn>
-                <TabBtn active={tab === "zones"} onClick={() => setTab("zones")}>
-                  Zones
-                </TabBtn>
-              </div>
-              {tab === "zones" && <ZoneDrawer activeId={activeId} />}
+              <ZoneDrawer activeId={activeId} />
             </>
           )}
         </section>
 
         <section className="space-y-4">
-          {view.kind === "room" && (
-            <>
-              <ConditionEditor activeId={activeId} onAdded={() => setRefresh((r) => r + 1)} />
-              <ConditionsList activeId={activeId} refresh={refresh} />
-              <EventLog />
-            </>
-          )}
           {view.kind === "map" && (
             <div className="rounded-xl border border-edge bg-black/20 p-4 text-sm text-slate-400">
               <p className="mb-2 text-base font-semibold text-slate-200">How it works</p>
@@ -100,33 +79,11 @@ export default function App() {
                 <li>Pick a room on the map to focus the AI on it.</li>
                 <li>All cameras in that room get detection at once (batched YOLO).</li>
                 <li>Other rooms stay light — only periodic people counts.</li>
-                <li>Conditions and zones bind to a focused camera inside the room.</li>
               </ul>
             </div>
           )}
         </section>
       </main>
     </div>
-  );
-}
-
-function TabBtn({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={`rounded-lg px-4 py-1.5 text-sm font-medium ${
-        active ? "bg-accent text-ink" : "border border-edge text-slate-300"
-      }`}
-    >
-      {children}
-    </button>
   );
 }
