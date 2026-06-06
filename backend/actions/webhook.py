@@ -30,7 +30,10 @@ class WebhookSender:
                 resp = requests.post(target, json={"content": f"**{title}**\n{message}"},
                                      timeout=self.timeout)
             elif kind == "ntfy" or "ntfy" in target:
-                headers = {"Title": title}
+                # HTTP headers must be latin-1; strip emoji/unicode from the Title
+                # (the emoji is carried by the Tags header instead).
+                safe_title = title.encode("ascii", "ignore").decode().strip() or "Watchful"
+                headers = {"Title": safe_title}
                 if priority:  # ntfy: min|low|default|high|urgent
                     headers["Priority"] = priority
                 if tags:  # ntfy: comma-separated emoji shortcodes, e.g. "warning"

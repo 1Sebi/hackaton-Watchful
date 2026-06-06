@@ -50,6 +50,21 @@ class Settings:
     # NTFY_BASE_URL/NTFY_TOPIC. Public service -> generic alert text only.
     NTFY_BASE_URL: str = os.environ.get("NTFY_BASE_URL", "https://ntfy.sh")
     NTFY_TOPIC: str = os.environ.get("NTFY_TOPIC", "")
+    # ── Telegram bot (action {"type":"telegram"}) ──
+    # Create a bot via @BotFather -> token; get your chat id from @userinfobot.
+    TELEGRAM_BOT_TOKEN: str = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+    TELEGRAM_CHAT_ID: str = os.environ.get("TELEGRAM_CHAT_ID", "")
+    # ── WhatsApp via CallMeBot (action {"type":"whatsapp"}) ──
+    # Free: message the CallMeBot number once to get an apikey (callmebot.com/whatsapp).
+    WHATSAPP_PHONE: str = os.environ.get("WHATSAPP_PHONE", "")      # e.g. +40712345678
+    WHATSAPP_APIKEY: str = os.environ.get("WHATSAPP_APIKEY", "")
+    # ── Continuous monitoring ──
+    # Cameras that have ENABLED conditions are watched continuously (detect + track
+    # + evaluate + act) at this rate even when they are NOT the focus camera — so a
+    # rule like "someone in the jacuzzi -> relay" fires while you're viewing another
+    # room. Kept low so it barely dents the focus camera's budget. Cameras with no
+    # rules stay on the cheap periodic count only.
+    MONITOR_FPS: float = _f("MONITOR_FPS", 1.5)
     # ── Multi-camera grid ──
     # % of pixels that must change frame-to-frame for the OpenCV motion gate to
     # consider the scene "moving" and run YOLO (lower = more sensitive).

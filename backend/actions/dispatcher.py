@@ -14,6 +14,7 @@ from typing import Optional
 
 from backend.actions.hikvision import HikvisionClient
 from backend.actions.logger import EventLogger
+from backend.actions.messaging import send_telegram, send_whatsapp
 from backend.actions.webhook import WebhookSender
 from backend.config import settings
 
@@ -34,14 +35,32 @@ class ActionDispatcher:
         kind = (action.get("type") or "log").lower()
         ctx = context or {}
         message = action.get("message") or ctx.get("reason") or "Watchful trigger"
+        conf = ctx.get("confidence")
+        full = message if conf is None else f"{message} (conf {float(conf):.2f})"
+        cam = ctx.get("camera_name") or ctx.get("camera_id")
+        if cam:
+            full = f"[{cam}] {full}"
         try:
-            if kind == "relay":
+            if kind in ("relay", "relay_on", "relay_off"):
                 hv = self.hikvision or HikvisionClient()
+                # explicit state, or implied by the alias (relay_on/relay_off)
+                state = action.get("state") or (
+                    "low" if kind == "relay_off" else "high")
                 ok = await asyncio.to_thread(
                     hv.relay_set, int(action.get("port", 1)),
-                    action.get("state", "high"), action.get("duration"),
+                    state, action.get("duration"),
                 )
-                return {"type": "relay", "ok": ok}
+                return {"type": kind, "ok": ok, "port": int(action.get("port", 1)), "state": state}
+            if kind == "telegram":
+                res = await asyncio.to_thread(
+                    send_telegram, f"⚠️ Watchful: {full}",
+                    action.get("token", ""), action.get("chat_id", ""))
+                return {"type": "telegram", **res}
+            if kind == "whatsapp":
+                res = await asyncio.to_thread(
+                    send_whatsapp, f"⚠️ Watchful: {full}",
+                    action.get("phone", ""), action.get("apikey", ""))
+                return {"type": "whatsapp", **res}
             if kind == "ntfy":
                 # phone push via ntfy.sh. URL = explicit override, else the
                 # configured topic. Generic text only — no footage/credentials.

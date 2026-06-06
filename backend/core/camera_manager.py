@@ -129,6 +129,7 @@ class CameraWorker:
         # per-tile people count for INACTIVE cameras (active uses tracker.active_count)
         self.tile_persons: Optional[int] = None
         self._last_tile_count = 0.0
+        self._last_monitor = 0.0  # last continuous-monitor tick (rule cameras)
 
     # ── helpers ──────────────────────────────────────────────────────────
     @property
@@ -354,19 +355,81 @@ class CameraWorker:
             if target > 0:
                 time.sleep(max(0.0, (1.0 / target) - (time.time() - t0)))
 
-    # ── detect loop: tile counter for every NON-focus camera ────────────────
+    # ── detect loop: monitor rule cameras, else light count ─────────────────
     def _detect_loop(self) -> None:
-        """Per-camera tile counter — refreshes ``tile_persons``.
+        """Per-camera background loop for every NON-focus camera.
 
-        Full per-frame detection runs ONLY on the focus camera, centralized in
-        ``CameraManager._room_detect_loop``. Every other camera (inactive rooms
-        AND non-focus cameras of the active room) just gets a light periodic
-        people count here, so its tile badge / map count stays alive cheaply.
+        - The focus camera is detected at full rate by ``_room_detect_loop`` (skip).
+        - A non-focus camera that has ENABLED conditions is MONITORED continuously
+          (``_monitor_tick``: detect + track + evaluate + act) so its rules fire even
+          while you're viewing another room — this is what makes "someone in the
+          jacuzzi -> relay" work autonomously.
+        - A non-focus camera with no rules just gets the cheap periodic people count.
         """
         while self.running:
             if not self.is_focus:
-                self._tile_count_tick()
-            time.sleep(0.2)
+                if self._has_conditions():
+                    self._monitor_tick()
+                else:
+                    self._tile_count_tick()
+            time.sleep(0.15)
+
+    def _has_conditions(self) -> bool:
+        with self._cfg_lock:
+            return any(c["enabled"] for c in self._conditions)
+
+    # ── continuous monitoring (non-focus cameras that carry rules) ──────────
+    def _monitor_tick(self) -> None:
+        """Detect + track + evaluate this camera's conditions at MONITOR_FPS, even
+        when it is not the focus. Mirrors the focus room loop's per-camera body but
+        for a single non-focus camera, so its rules act autonomously."""
+        fps = max(0.2, settings.MONITOR_FPS)
+        now = time.time()
+        if now - self._last_monitor < (1.0 / fps):
+            return
+        with self._cfg_lock:
+            conditions = [c for c in self._conditions if c["enabled"]]
+            zones = dict(self._zones)
+        if not conditions:
+            return
+        # fresh frame: render's if this cam renders (active room), else on-demand
+        frame = self._last_frame if self.is_active else None
+        if frame is None and self._src is not None:
+            try:
+                raw = self._src.read()
+                frame = self._maybe_resize(raw) if raw is not None else None
+            except Exception:
+                frame = None
+        if frame is None:
+            return
+        # one YOLO pass under the shared model lock (blocks briefly behind the focus
+        # camera's batch — fine at ~1.5/s; keeps the focus smooth)
+        try:
+            with self.engine.lock:
+                dets = self.engine.detector.detect(frame)
+        except Exception:
+            dets = []
+        tracked = self.tracker.update_iou(dets, now)
+        with self._res_lock:
+            self._last_dets = tracked
+        need_pose = any(c["predicate"].evaluator == "pose" for c in conditions)
+        poses = self.engine.pose.analyze(frame) if need_pose else []
+        pose_map = self.engine.pose.associate(poses, tracked) if need_pose else {}
+        run_vlm = self.sampler.should_run_vlm(frame, now)
+        ctx = EvalContext(
+            frame=frame, detections=tracked, poses=poses, pose_map=pose_map,
+            tracks=self.tracker.tracks, zones=zones, now=now, camera_id=self.id,
+        )
+        for cond in conditions:
+            pred: Predicate = cond["predicate"]
+            if pred.evaluator == "vlm" and not run_vlm:
+                continue
+            result = self.engine.evaluator.evaluate(pred, ctx)
+            fired, _ = self.afp.should_fire(pred, result, now)
+            if fired:
+                self._on_fire(cond, result)
+        self.tile_persons = self.tracker.active_count  # keep the tile/map count fresh
+        self._last_monitor = now
 
     # ── per-tile people count (inactive cameras) ────────────────────────
     def _tile_count_tick(self) -> None:
@@ -457,7 +520,9 @@ class CameraWorker:
         self._record_event(cond, result)
         try:
             asyncio.run(self.engine.dispatcher.dispatch(
-                cond["action"], {"reason": result.reason, "confidence": result.confidence}))
+                cond["action"],
+                {"reason": result.reason, "confidence": result.confidence,
+                 "camera_id": self.id, "camera_name": self.name}))
         except Exception:
             pass
 
@@ -724,7 +789,7 @@ class CameraManager:
                 run_vlm = w.sampler.should_run_vlm(frame, now)
                 ctx = EvalContext(
                     frame=frame, detections=tracked, poses=poses, pose_map=pose_map,
-                    tracks=w.tracker.tracks, zones=zones, now=now,
+                    tracks=w.tracker.tracks, zones=zones, now=now, camera_id=w.id,
                 )
                 for cond in conditions:
                     if not cond["enabled"]:

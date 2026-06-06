@@ -35,6 +35,7 @@ class EvalContext:
     tracks: Dict[int, Track] = field(default_factory=dict)
     zones: Dict[str, list] = field(default_factory=dict)     # name -> [(x,y), ...]
     now: float = 0.0
+    camera_id: str = ""  # scopes per-camera state (absence timer, VLM cache)
 
 
 @dataclass
@@ -126,10 +127,16 @@ class HybridEvaluator:
         ids = [d.track_id for d in dets if d.track_id is not None]
         avg_conf = float(np.mean([d.conf for d in dets])) if dets else 0.0
 
+        # Counts/presence are DETERMINISTIC: when the count clears the threshold we
+        # are certain (confidence 1.0). Per-detection avg_conf only reflects YOLO box
+        # quality, not count certainty — gating a count on it (vs min_confidence 0.8)
+        # silently blocked every count rule once the detector conf was lowered. The
+        # debounce (N consecutive) + cooldown still guard against flukes.
         if t == PredicateType.COUNT_GT.value:
             v = int(predicate.params.get("value", 0))
             det = count > v
-            return EvalResult(det, avg_conf if det else 0.0, f"count {count} > {v}", "yolo", ids, {"count": count})
+            return EvalResult(det, 1.0 if det else 0.0, f"count {count} > {v}", "yolo", ids,
+                              {"count": count, "avg_conf": round(avg_conf, 2)})
         if t == PredicateType.COUNT_LT.value:
             v = int(predicate.params.get("value", 0))
             det = count < v
@@ -137,16 +144,17 @@ class HybridEvaluator:
         if t == PredicateType.COUNT_EQ.value:
             v = int(predicate.params.get("value", 0))
             det = count == v
-            return EvalResult(det, avg_conf if det and dets else (1.0 if det else 0.0),
+            return EvalResult(det, 1.0 if det else 0.0,
                               f"count {count} == {v}", "yolo", ids, {"count": count})
         if t == PredicateType.PRESENCE_IN_ZONE.value:
             det = count > 0
-            return EvalResult(det, avg_conf if det else 0.0,
-                              f"{count} in zone {predicate.params.get('zone')}", "yolo", ids, {"count": count})
+            return EvalResult(det, 1.0 if det else 0.0,
+                              f"{count} in zone {predicate.params.get('zone')}", "yolo", ids,
+                              {"count": count, "avg_conf": round(avg_conf, 2)})
         return EvalResult(False, 0.0, f"unhandled yolo type {t}", "yolo")
 
     def _absence(self, predicate: Predicate, ctx: EvalContext) -> EvalResult:
-        key = self._key(predicate)
+        key = f"{ctx.camera_id}|{self._key(predicate)}"  # per-camera absence timer
         secs = int(predicate.params.get("seconds", 10))
         if ctx.detections:
             self._absence_last_present[key] = ctx.now
@@ -193,7 +201,7 @@ class HybridEvaluator:
         return ctx.frame[y1:y2, x1:x2]
 
     def _vlm(self, predicate: Predicate, ctx: EvalContext) -> EvalResult:
-        key = self._key(predicate)
+        key = f"{ctx.camera_id}|{self._key(predicate)}"  # per-camera VLM cache
         cached = self._vlm_cache.get(key)
         if cached and (ctx.now - cached[0]) < self.vlm_min_interval:
             return cached[1]  # adaptive sampling: reuse recent result

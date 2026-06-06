@@ -126,6 +126,17 @@ class VLMPredicateCompiler:
             return Predicate(type=PredicateType.COUNT_GT, params={"value": n},
                              min_confidence=0.8, original_text=text)
 
+        # entry / bare presence -> count > 0 (anyone present). e.g. "a person enters
+        # the jacuzzi" on the jacuzzi camera. Kept NARROW (entry/presence verbs) so
+        # semantic conditions like "someone looks distressed" still go to the VLM.
+        if re.search(
+            r"\benter(s|ing)?\b|is present|are present|is in the|is inside|occupied|"
+            r"intr[aă]\b|p[aă]trunde|este prezent|apare|e cineva|este cineva",
+            t,
+        ):
+            return Predicate(type=PredicateType.COUNT_GT, params={"value": 0},
+                             min_confidence=0.8, original_text=text)
+
         return None  # -> VLM fallback
 
     # ── VLM fallback ─────────────────────────────────────────────────────
