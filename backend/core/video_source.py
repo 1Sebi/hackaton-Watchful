@@ -41,24 +41,26 @@ class VideoSource:
         source: Union[int, str] = 0,
         max_reconnect: int = 5,
         reconnect_delay: float = 1.5,
+        continuous: bool = True,
     ) -> None:
         self.source = self._coerce(source)
         self.max_reconnect = max_reconnect
         self.reconnect_delay = reconnect_delay
+        # continuous=True: a background grabber decodes at full stream rate and keeps
+        #   the newest frame (low latency — for the AI-active 4K camera).
+        # continuous=False: NO grabber; read() decodes one frame on demand, so an
+        #   inactive grid tile read at ~3 fps decodes ~3 fps (not ~24) — the lever
+        #   that makes ~18 simultaneous sub-streams affordable on CPU.
+        self.continuous = continuous
         self._cap: Optional[cv2.VideoCapture] = None
         self._reconnects = 0
-        # latest-frame buffer drained by a background grabber (live sources only)
         self._latest: Optional[np.ndarray] = None
         self._frame_lock = threading.Lock()
+        self._read_lock = threading.Lock()  # serialize on-demand cap.read()
         self._grab_thread: Optional[threading.Thread] = None
         self._stop = threading.Event()
         self.open()
-        # For live sources (webcam/RTSP) a daemon thread continuously drains the
-        # capture and keeps ONLY the freshest frame, so read() never hands back a
-        # stale queued frame -> latency can't accumulate even when the consumer
-        # (detector) is slower than the stream. Files are read on demand so their
-        # playback pacing / EOF semantics are preserved.
-        if not self.is_file:
+        if self.continuous and not self.is_file:
             self._grab_thread = threading.Thread(target=self._grab_loop, daemon=True)
             self._grab_thread.start()
 
@@ -149,8 +151,22 @@ class VideoSource:
                 return None
             ok, frame = self._cap.read()
             return frame if ok and frame is not None else None
-        with self._frame_lock:
-            return self._latest
+        if self.continuous:
+            with self._frame_lock:
+                return self._latest
+        # on-demand (tile) mode: decode one frame now. TCP back-pressure keeps the
+        # decode near the read rate, so a tile read at GRID_TILE_FPS costs ~that.
+        with self._read_lock:
+            if self._cap is None:
+                return None
+            try:
+                ok, frame = self._cap.read()
+            except Exception:
+                ok, frame = False, None
+            if ok and frame is not None:
+                self._reconnects = 0
+                return frame
+            return self._reopen_once()
 
     def _grab_loop(self) -> None:
         """Continuously drain the capture, keeping only the newest frame."""
@@ -169,6 +185,18 @@ class VideoSource:
             # transient failure (RTSP drop) -> bounded reconnect
             if not self._try_reopen():
                 break
+
+    def _reopen_once(self) -> Optional[np.ndarray]:
+        """On-demand (non-continuous) reconnect: try to reopen + grab one frame."""
+        if self._reconnects >= self.max_reconnect:
+            return None
+        self._reconnects += 1
+        try:
+            self.open()
+            ok, frame = self._cap.read()
+            return frame if ok and frame is not None else None
+        except (RuntimeError, Exception):  # noqa: BLE001
+            return None
 
     def _try_reopen(self) -> bool:
         """Bounded reconnect for a dropped live stream. ``False`` when exhausted."""

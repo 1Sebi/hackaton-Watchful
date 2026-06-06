@@ -5,13 +5,17 @@ AI pipeline (YOLO + pose + predicate evaluation + actions). Heavy models are
 loaded once and shared; per-camera state (tracker, anti-false-positive, motion
 gate, JPEG buffer, events) lives in each worker.
 
-Every camera streams the same single 4K main stream at STREAM_FPS (1 fps) — no
-sub-stream, no per-camera quality switching. Each worker decouples *display* from
-*detection*:
+Streaming is asymmetric to fit a CPU-only box with many cameras:
+  - INACTIVE tiles open the light 360p SUB stream in on-demand mode (no grabber),
+    decoding only at GRID_TILE_FPS — so ~18 tiles stay affordable;
+  - the ACTIVE camera opens the 4K MAIN stream continuously (newest frame) for a
+    sharp big view + detection. Switching active reopens that camera on 4K and the
+    previous one back on sub; the render loop holds the last frame while the new
+    source connects, so there is no black-gap flicker.
 
-  - render loop (STREAM_FPS): publishes the freshest frame + last-known boxes;
-  - detect loop: the active camera runs full YOLO + pose + predicates (motion-
-    gated); inactive cameras only refresh a periodic people count (tile_count).
+Each worker decouples *display* from *detection*: the render loop publishes frames
++ last-known boxes; the detect loop (active only) runs YOLO + pose + predicates.
+Render is the sole decoder — detect and the tile counter reuse its last frame.
 """
 from __future__ import annotations
 
@@ -59,7 +63,9 @@ class CameraWorker:
         self.id: str = cam["id"]
         self.name: str = cam["name"]
         self.room: str = cam.get("room", cam["name"])       # UI grouping (one box per room)
-        self.url: str = cam["url"]                           # 4K main stream (the only stream)
+        self.sub_url: str = cam["url"]                       # light 360p sub-stream (tiles)
+        self.main_url: str = cam.get("main_url", cam["url"])  # 4K main (active big view)
+        self._cur_url: Optional[str] = None
         self.engine = engine
         self.manager = manager
 
@@ -89,6 +95,9 @@ class CameraWorker:
         self._src: Optional[VideoSource] = None
         self._threads: List[threading.Thread] = []
         self._last_detect = 0.0
+        # newest decoded+resized frame, stashed by the render loop so the detect
+        # loop and the tile counter never decode a second time (one decoder/camera).
+        self._last_frame = None
         # per-tile people count for INACTIVE cameras (active uses tracker.active_count)
         self.tile_persons: Optional[int] = None
         self._last_tile_count = 0.0
@@ -138,8 +147,10 @@ class CameraWorker:
         if self.running:
             return
         self.running = True
+        want, cont = self._desired_source()
         try:
-            self._src = VideoSource(self.url)
+            self._src = VideoSource(want, continuous=cont)
+            self._cur_url = want
         except Exception as e:  # noqa: BLE001
             self.error = f"open failed: {e}"
             self.running = False
@@ -151,6 +162,34 @@ class CameraWorker:
         ]
         for t in self._threads:
             t.start()
+
+    def _desired_source(self):
+        """Which stream this worker should be on: 4K-continuous if active, else
+        light sub-stream on-demand."""
+        if self.is_active:
+            return self.main_url, True
+        return self.sub_url, False
+
+    def switch_stream(self) -> None:
+        """Reopen on the stream that matches the current active/inactive state.
+
+        Off the request path (4K can take ~2s to connect). The render loop keeps
+        showing the last frame while the new source warms up — no flicker.
+        """
+        want, cont = self._desired_source()
+        if not self.running or self._cur_url == want:
+            return
+        try:
+            new = VideoSource(want, continuous=cont)
+        except Exception as e:  # noqa: BLE001
+            self.error = f"open failed: {e}"
+            return
+        old = self._src
+        self._src = new
+        self._cur_url = want
+        self.error = None
+        if old is not None:
+            old.release()
 
     def stop(self) -> None:
         self.running = False
@@ -166,9 +205,12 @@ class CameraWorker:
             t0 = time.time()
             frame = self._src.read() if self._src else None
             if frame is None:
+                # source still connecting / dropped -> hold the last published JPEG
+                # (no black gap on a stream swap) and try again shortly.
                 time.sleep(0.03)
                 continue
             frame = self._maybe_resize(frame)
+            self._last_frame = frame  # detect loop + tile counter reuse this
             self.motion_pct = self.motion.score(frame)  # single writer of the gate
             annotated = self._draw(frame, self.is_active)
             ok, buf = cv2.imencode(".jpg", annotated, [cv2.IMWRITE_JPEG_QUALITY, 70])
@@ -200,11 +242,11 @@ class CameraWorker:
                 time.sleep(min(0.05, min_interval - since))
                 continue
 
-            frame = self._src.read() if self._src else None
+            # reuse the render loop's freshest decoded+resized frame (one decoder)
+            frame = self._last_frame
             if frame is None:
                 time.sleep(0.03)
                 continue
-            frame = self._maybe_resize(frame)
 
             # Active camera: skip the motion gate entirely. A seated person who
             # doesn't move would otherwise drop out of detection for up to 5s,
@@ -264,13 +306,13 @@ class CameraWorker:
         now = time.time()
         if now - self._last_tile_count < interval:
             return
-        frame = self._src.read() if self._src else None
+        frame = self._last_frame  # the render loop's last sub-stream frame
         if frame is None:
             return
         if not self.engine.lock.acquire(blocking=False):
             return  # active camera is using the model — try again next tick
         try:
-            dets = self.engine.detector.detect(self._maybe_resize(frame))
+            dets = self.engine.detector.detect(frame)
         except Exception:
             dets = []
         finally:
@@ -419,8 +461,11 @@ class CameraManager:
                 new._last_dets, new._last_pose_map = [], {}
             self.engine.detector.reset_tracker()
             new.reload()
-        # all cameras already run the same 4K stream — switching active only moves
-        # which one gets full detection + its own rules (no stream swap needed).
+        # upgrade the new active camera to 4K, drop the old one back to the light
+        # sub-stream — in the background (4K connect ~2s; render holds last frame).
+        threading.Thread(target=new.switch_stream, daemon=True).start()
+        if old is not None and old.id != cam_id:
+            threading.Thread(target=old.switch_stream, daemon=True).start()
         return True
 
     def cameras_state(self) -> dict:

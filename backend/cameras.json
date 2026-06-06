@@ -1,12 +1,27 @@
 {
-  "_comment": "Curated venue camera grid. NO credentials here — id/name/nvr/channel only. The RTSP URL is assembled at runtime from the NVR ip+password in .env (NVR1_IP/PASS, NVR2_IP/PASS). channel = camera*100 + stream (stream 2 = 640x360 sub-stream, light enough for a live grid).",
+  "_comment": "Venue camera grid. NO credentials here — id/name/nvr/channel/room only. RTSP URLs are assembled at runtime from the NVR ip+password in .env (NVR1_IP/PASS, NVR2_IP/PASS). channel = camera*100 + 2 (the 360p sub-stream used for light tiles); the active camera auto-upgrades to channel*100+1 (4K main). Dead channels (NVR2 cam 8/11 = no stream, 14 = gray) are excluded.",
   "default_active": "restaurant",
   "cameras": [
-    {"id": "restaurant", "name": "Restaurant SW",  "nvr": "NVR1", "channel": 502,  "room": "Restaurant"},
-    {"id": "rest_bar",   "name": "Restaurant Bar", "nvr": "NVR2", "channel": 602,  "room": "Restaurant"},
-    {"id": "jacuzzi",    "name": "Jacuzzi / Pool", "nvr": "NVR2", "channel": 302,  "room": "Jacuzzi"},
-    {"id": "reception",  "name": "Reception",      "nvr": "NVR2", "channel": 702,  "room": "Reception"},
-    {"id": "lobby_bar",  "name": "Lobby Bar",      "nvr": "NVR1", "channel": 702,  "room": "Lobby Bar"},
-    {"id": "gym",        "name": "Gym",            "nvr": "NVR2", "channel": 1502, "room": "Gym"}
+    {"id": "restaurant",   "name": "Restaurant SW",   "nvr": "NVR1", "channel": 502,  "room": "Restaurant"},
+    {"id": "rest_bar",     "name": "Restaurant Bar",  "nvr": "NVR2", "channel": 602,  "room": "Restaurant"},
+    {"id": "jacuzzi",      "name": "Jacuzzi / Pool",  "nvr": "NVR2", "channel": 302,  "room": "Jacuzzi"},
+    {"id": "reception",    "name": "Reception",       "nvr": "NVR2", "channel": 702,  "room": "Reception"},
+    {"id": "lobby_bar1",   "name": "Lobby Bar (N1)",  "nvr": "NVR1", "channel": 702,  "room": "Lobby"},
+    {"id": "lobby_bar2",   "name": "Lobby Bar (N2)",  "nvr": "NVR2", "channel": 902,  "room": "Lobby"},
+    {"id": "bar",          "name": "Bar",             "nvr": "NVR2", "channel": 1002, "room": "Lobby"},
+    {"id": "marble_lobby", "name": "Marble Lobby",    "nvr": "NVR2", "channel": 202,  "room": "Lobby"},
+    {"id": "lobby1",       "name": "Lobby (N1)",      "nvr": "NVR1", "channel": 202,  "room": "Lobby"},
+    {"id": "lobby2",       "name": "Lobby (N2)",      "nvr": "NVR2", "channel": 1302, "room": "Lobby"},
+    {"id": "gym",          "name": "Gym",             "nvr": "NVR2", "channel": 1502, "room": "Gym"},
+    {"id": "event_hall",   "name": "Event Hall N",    "nvr": "NVR2", "channel": 502,  "room": "Event Hall"},
+    {"id": "lounge",       "name": "Lounge",          "nvr": "NVR1", "channel": 802,  "room": "Lounge"},
+    {"id": "conference",   "name": "Conference SE",   "nvr": "NVR2", "channel": 102,  "room": "Conference"},
+    {"id": "north_park",   "name": "North Parking",   "nvr": "NVR1", "channel": 602,  "room": "Outdoor"},
+    {"id": "west_park",    "name": "West Entry",      "nvr": "NVR2", "channel": 1202, "room": "Outdoor"},
+    {"id": "w_entrance",   "name": "W Entrance",      "nvr": "NVR1", "channel": 102,  "room": "Entrances"},
+    {"id": "east_exit",    "name": "East Exit",       "nvr": "NVR1", "channel": 302,  "room": "Entrances"},
+    {"id": "stairs",       "name": "Stairs",          "nvr": "NVR1", "channel": 402,  "room": "Back-of-house"},
+    {"id": "dishwashers",  "name": "Dishwashers",     "nvr": "NVR2", "channel": 402,  "room": "Back-of-house"},
+    {"id": "wine_cellar",  "name": "Wine Cellar",     "nvr": "NVR2", "channel": 1602, "room": "Back-of-house"}
   ]
 }

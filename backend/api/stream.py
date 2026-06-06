@@ -24,7 +24,7 @@ def _frames(get_worker):
         if jpg:
             yield (b"--frame\r\nContent-Type: image/jpeg\r\n"
                    b"Content-Length: " + str(len(jpg)).encode() + b"\r\n\r\n" + jpg + b"\r\n")
-        time.sleep(0.04)  # ~25 fps cap
+        time.sleep(0.08)  # ~12 fps cap — don't push faster than the render produces
 
 
 @router.get("/stream/{camera_id}/live.mjpg")

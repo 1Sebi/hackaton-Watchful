@@ -32,7 +32,7 @@ class Settings:
     # Resize each captured frame to this width before detection/draw/encode.
     # Lets you capture a sharp high-res stream (even 4K main) while keeping YOLO
     # fast on CPU. 0 = no resize (use the native stream resolution).
-    FRAME_MAX_WIDTH: int = int(_f("FRAME_MAX_WIDTH", 0))
+    FRAME_MAX_WIDTH: int = int(_f("FRAME_MAX_WIDTH", 1280))
     VLM_MAX_FPS: float = _f("VLM_MAX_FPS", 1.0)
     DATABASE_URL: str = os.environ.get("DATABASE_URL", "sqlite:///watchful.db")
     # ntfy.sh phone notifications. A condition with action {"type":"ntfy"} posts to
@@ -49,7 +49,7 @@ class Settings:
     # Display refresh for the ACTIVE camera (the big tile under focus). Decoupled
     # from detection: detection runs at DETECT_MAX_FPS, render publishes at this
     # rate for smooth video. 12-15 looks fluid; 20 is overkill for surveillance.
-    RENDER_FPS: float = _f("RENDER_FPS", 12.0)
+    RENDER_FPS: float = _f("RENDER_FPS", 20.0)
     # Display refresh for INACTIVE tiles. Lower saves CPU — we mostly need to see
     # movement, not 30 fps. 4-6 is the sweet spot for an N-camera grid on CPU.
     GRID_TILE_FPS: float = _f("GRID_TILE_FPS", 4.0)
@@ -100,18 +100,20 @@ def _load_cameras():
             ip, user, pw = _nvr_creds(str(c.get("nvr", "")))
             if not ip or not pw:
                 continue  # NVR creds not in .env -> skip this camera
-            ch = int(c["channel"])
-            main_ch = (ch // 100) * 100 + 1            # x01 = 4K main stream (only stream used)
+            sub_ch = int(c["channel"])                # x02 = 360p sub-stream (light tiles)
+            main_ch = (sub_ch // 100) * 100 + 1       # x01 = 4K main (active big view)
             cams.append({
                 "id": c["id"],
                 "name": c.get("name", c["id"]),
                 "room": c.get("room", c.get("name", c["id"])),   # grouping for the UI
-                "url": _build_rtsp(ip, user, pw, main_ch),       # 4K main @ STREAM_FPS
+                "url": _build_rtsp(ip, user, pw, sub_ch),        # tile / inactive (light)
+                "main_url": _build_rtsp(ip, user, pw, main_ch),  # 4K when AI-active
             })
     except Exception:
         cams = []
     if not cams:  # backward-compatible single-camera mode
-        cams = [{"id": "camera", "name": "Camera", "url": settings.VIDEO_SOURCE}]
+        cams = [{"id": "camera", "name": "Camera",
+                 "url": settings.VIDEO_SOURCE, "main_url": settings.VIDEO_SOURCE}]
         default = "camera"
     if default not in {c["id"] for c in cams}:
         default = cams[0]["id"]
