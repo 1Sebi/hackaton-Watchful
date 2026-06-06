@@ -83,7 +83,7 @@ export default function CameraGrid({
                     className="block aspect-video w-full object-cover"
                     onError={(e) => ((e.target as HTMLImageElement).style.opacity = "0.2")}
                   />
-                  {c.persons != null && (
+                  {c.persons != null && rc.length > 1 && (
                     <span className="absolute left-1 top-1 rounded bg-black/70 px-1 text-[10px] font-bold text-white">
                       🧍 {c.persons}
                     </span>
