@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Guidance for Claude Code sessions on this repo.
 
 ## What this is
 
@@ -8,79 +8,94 @@ Watchful turns a natural-language condition ("notify me when someone raises a ha
 
 ## Commands
 
-Windows/PowerShell is the primary environment (Python 3.13). The venv lives in `.venv`.
+Primary environment: Python 3.13, Node 18+. The venv lives in `.venv`.
 
-Dependencies are plain **pip** (`requirements.txt`) — no Poetry/pyproject/uv, no Makefile. YOLO/pose weights (`yolov8{n,s,m}.pt`, `yolov8n-pose.pt`) are **auto-downloaded** to the repo root on first run (gitignored), not committed. There is **no linting/formatting config** (ruff/black/eslint/prettier) and no CI/Docker — match surrounding style by hand.
+Dependencies are plain **pip** (`requirements.txt`) — no Poetry/pyproject/uv, no Makefile. YOLO/pose weights (`yolov8m.pt`, `yolov8n-pose.pt`) auto-download to the repo root on first run (gitignored), not committed. No linter/formatter config; no CI/Docker — match surrounding style by hand.
 
-```powershell
+```bash
 # First-time setup
-python -m venv .venv; .\.venv\Scripts\activate
+python -m venv .venv && source .venv/bin/activate   # Windows: .\.venv\Scripts\activate
 pip install -r requirements.txt
 
 # Backend (FastAPI; agent loop starts as a background thread via lifespan)
-.\.venv\Scripts\activate
-uvicorn backend.main:app --reload        # -> http://localhost:8000/docs
+uvicorn backend.main:app --reload                   # -> http://localhost:8000/docs
 
 # Frontend
-cd frontend; npm install; npm run dev    # Vite dev server
-npm run build                            # tsc + vite build
+cd frontend && npm install && npm run dev           # Vite dev server
+npm run build                                       # tsc + vite build
 
 # Local VLM (required for compile + semantic conditions)
 ollama pull moondream
-ollama pull llama3.2-vision              # optional, heavy semantic conditions
+ollama pull llama3.2-vision                         # optional, hard-semantic conditions
 ```
 
 ### Tests
 
-There is **no pytest**. Tests are standalone scripts run directly, each printing `RESULT: N/M checks passed` and exiting non-zero on failure. Run one with:
+Tests are standalone scripts run directly (no pytest), each printing `RESULT: N/M checks passed` and exiting non-zero on failure.
 
-```powershell
+```bash
 python scripts/test_e2e.py        # full chain: NL -> compile -> eval -> AFP -> DB event
-python scripts/test_compiler.py   # NL -> Predicate compilation
-python scripts/test_evaluator.py  # predicate routing/evaluation
-python scripts/test_antifalse.py  # the AFP gating layer
-# also: test_detector, test_pose, test_vlm, test_tracker-ish, test_db, test_api, test_visualizer, test_reference, test_final
+python scripts/test_compiler.py
+python scripts/test_evaluator.py
+python scripts/test_antifalse.py
+# also: test_detector, test_pose, test_vlm, test_db, test_api, test_visualizer, test_reference, test_final
 ```
 
-`scripts/` also holds non-test operational tools (`probe_rtsp.py`, `list_channels.py`, `record_clip.py`, `hikvision_io.py`, etc.) for working with real Hikvision cameras on-site.
+`scripts/` also holds operational tools — `probe_rtsp.py`, `list_channels.py`, `hikvision_io.py` (relay), `record_clip.py`, and especially `audit_streams.py` / `upgrade_substreams.py` / `restore_substreams.py` for the Hikvision sub-stream reconfiguration that gates detection quality.
 
 ### Eval
 
-```powershell
+```bash
 python eval/run_eval.py --conf 0.5 --min-frames 2 --samples 8   # writes eval/results.md
 ```
+
 Clips in `eval/clips/` are gitignored (real venue footage); `eval/ground_truth.json` is committed.
 
 ## Architecture
 
-The pipeline is **`NL → Predicate → agent loop (PERCEIVE → REASON → AFP → ACT)`**. Read `docs/ARCHITECTURE.md` for the full diagram.
+`NL → Predicate → agent loop (PERCEIVE → REASON → AFP → ACT)`.
 
-**Predicate** (`backend/predicates/types.py`) is the spine. The compiler emits it; the evaluator consumes it. Its `evaluator` field routes evaluation to one of: `yolo` (counts/zones/absence), `pose` (hand-raised/sitting/standing), `vlm` (semantic), or `hybrid`. `PredicateType` → default evaluator mapping lives in `EVALUATOR_BY_TYPE`. Unknown/ambiguous conditions fall back to `SEMANTIC` (a VLM visual question). The Predicate also carries the AFP thresholds (`min_confidence`, `min_consecutive`, `cooldown_seconds`).
+### The Predicate spine
 
-**Hybrid is the core design decision** (`predicates/evaluator.py`): counts/zones/postures are deterministic and run on YOLO/pose at high FPS with no hallucination; the VLM is reserved for genuinely abstract conditions, throttled to ~1 FPS (`VLM_MAX_FPS`) and skipped when the scene hasn't changed. This is what keeps it cost-zero and reliable. Don't route a deterministic condition through the VLM.
+**`backend/predicates/types.py`** defines `PredicateType` (COUNT_GT, PRESENCE_IN_ZONE, ABSENCE_FOR_DURATION, POSE_HAND_RAISED/SITTING/STANDING, SEMANTIC, …) plus `Predicate` itself. The `evaluator` field routes to one of: `yolo` (counts/zones/absence), `pose` (postures), `vlm` (semantic), `hybrid`. `EVALUATOR_BY_TYPE` is the default mapping. Unknown/ambiguous conditions fall back to SEMANTIC (a VLM visual question). Each Predicate also carries the AFP thresholds (`min_confidence`, `min_consecutive`, `cooldown_seconds`).
 
-**`CameraManager` (`backend/core/camera_manager.py`) is the live orchestrator** — this is where the real multi-camera agent loop runs, not `pipeline.py`. Key mechanics worth knowing before editing it:
-- The whole venue is a grid; exactly **one room is "active"** at a time, and within it **only the single FOCUS camera** (`active_id`, the big "Live view") runs full per-frame detection. `is_active` = camera's room is open; `is_focus` = this is the one camera being detected. Cameras are grouped into rooms (`cameras.json` `room` field).
-- **Focus-only detection:** the whole YOLO budget goes to the focus camera, so it detects smoothly (~9/s) regardless of how many cameras the room has (batching across all room cams used to crawl — 6 cams → ~1.6/s each). Non-focus cameras (active room or not) only get a light periodic people count (`_tile_count_tick`, ~every 8s); conditions evaluate on the focus camera. Switching focus = `set_active_room(room, primary_cam=...)`.
-- **Heavy models are shared** across all cameras via `_Engine` (one detector, one pose, one VLM, one `threading.Lock`); per-camera state (tracker, AFP, motion gate, JPEG buffer, events) lives in each `CameraWorker`.
-- **Display is decoupled from detection.** The render loop runs only for cameras in the active room (inactive ones idle), publishes its own latest frame + last-known boxes at `RENDER_FPS` (focus) / `GRID_TILE_FPS` (other tiles), and does **not** yield to detection — the detect loop runs in parallel and rate-caps itself at `DETECT_MAX_FPS`. (An old `engine.detecting` "skip publish while detecting" guard was removed; it throttled the feed to the detection rate and made video choppy.)
-- **Asymmetric streaming:** only the focus camera opens the heavy 4K main stream (continuous); every other camera uses the light 360p sub-stream — opening 4K on multiple room cams at once starved/froze the non-focus grabbers. `switch_stream` does an atomic handoff (old source keeps feeding until the new one yields a real frame) to avoid black-gap flicker.
-- **Tracker counts honestly:** `TrackManager.active_count` counts only tracks seen within `active_window` (~1.5s), not all tracks held for `prune_after` (5s) — otherwise fast detection on low-confidence (jittery) boxes mints short-lived ids and badly over-counts.
-- This file is heavily perf-tuned for CPU-only boxes. The comments document *why* values are what they are. **Preserve these invariants** — many were regressions that got fixed. Watch the `[room-detect] SLOW cycle` log when changing detection cadence.
+**Compiler** (`predicates/compiler.py`): deterministic EN+RO rules first; VLM fallback only as a safety net for genuinely abstract conditions. Don't route a deterministic condition through the VLM.
 
-`backend/core/pipeline.py` (`AgentPipeline` / `get_pipeline()`) is the **legacy single-camera** loop. It's still referenced for VLM access and zone lookup by the condition compiler (`api/conditions.py`), so don't assume it's dead — but new live-detection logic belongs in `CameraManager`.
+**Hybrid evaluator** (`predicates/evaluator.py`): counts/zones/postures are deterministic and run on YOLO/pose at high FPS with no hallucination; the VLM is reserved for genuinely abstract conditions, throttled to ~1 FPS (`VLM_MAX_FPS`) and skipped when the scene hasn't changed (reference-frame gate). This is what keeps it cost-zero AND reliable.
 
-**Config flows through `backend/config.py`** (`settings` singleton). Note: the **committed `.env.example` values diverge from the in-code defaults** (e.g. `DETECTION_IMGSZ` 960 in `.env.example` vs 640 default in code; `DETECTION_MODEL` yolov8m). The code defaults reflect the current CPU-real-time tuning. Camera credentials are **never committed**: `backend/cameras.json` carries only `id/name/room/nvr/channel`; RTSP URLs are assembled at runtime from NVR IP/password in `.env` (`_build_rtsp`). Sub-stream channel `x02` → tiles, main `x01` → 4K active.
+### `CameraManager` — invariants in `backend/core/camera_manager.py`
 
-**Other layers** (one concern each):
-- `core/`: `video_source` (webcam/RTSP/file, reconnect), `detector` (YOLOv8 + `detect_batch`), `tracker` (IoU/ByteTrack ids, per-id duration), `pose_analyzer` (COCO-17 keypoints + IoU association to tracks), `reference_frame` (`MotionGate` gates YOLO, `AdaptiveSampler` gates VLM).
+Read the docstring at the top of that file: it codifies the rules below. **Don't break them in future changes.**
+
+1. **EXACTLY ONE stream per camera.** Each `CameraWorker` opens the sub-stream URL and never switches. There is no main_url, no switch_stream. To raise detection quality, reconfigure the NVR sub profile with `scripts/upgrade_substreams.py` — the app consumes the same single feed.
+2. **EXACTLY ONE loop per camera (`_loop`).** It decodes a frame, runs YOLO + tracking + condition evaluation, draws the overlay, publishes the JPEG. Display and detection are the same operation at the same rate — the boxes the viewer sees are the boxes that just got computed on that frame. Visible cameras run as fast as decode + lock-serialized YOLO allow; off-screen rule cameras run the same body capped at `MONITOR_FPS` so they don't steal CPU from what the user is watching.
+3. **One detector + one pose + one VLM** in `_Engine`, shared by every worker; `engine.lock` serializes inference (ultralytics is not thread-safe). Per-camera state (tracker, AFP, motion gate, JPEG buffer, events) lives in each `CameraWorker`.
+4. **VideoSource is `continuous=False`** — no background grabber; an idle camera (no rules, not active) decodes zero frames.
+
+State surfaces: `is_active` = camera's room is the one the user is viewing; `is_focus` = the big-view camera within that room. The focus camera publishes a *clean* JPEG (boxes drawn by the frontend overlay via the `/track` REST snapshot of `_last_dets`); other room tiles get a light name+motion-dot overlay.
+
+`backend/core/pipeline.py` (`AgentPipeline` / `get_pipeline()`) is the **legacy single-camera** loop. It's still referenced for VLM access and zone lookup by the condition compiler (`api/conditions.py`), so don't assume it's dead — but all new live-detection logic belongs in `CameraManager`.
+
+### Config
+
+**`backend/config.py`** (`settings` singleton). Camera credentials are **never committed**: `backend/cameras.json` carries only `id/name/room/nvr/channel`; RTSP URLs are assembled at runtime from NVR IP/password in `.env` (`_build_rtsp`). The single stream is the sub-stream — channel `x02`.
+
+Optional `ENABLED_ROOMS=Restaurant,Jacuzzi,...` in `.env` whitelists which rooms' cameras get loaded.
+
+Two engine knobs:
+- `MONITOR_FPS` — rate cap for off-screen rule cameras (default 1.5)
+- `MOTION_MIN_PCT` — % of pixels that must change to flag the scene as moving (drives VLM gating + the tile "live" dot)
+
+### Other layers
+
+- `core/`: `video_source` (RTSP/webcam/file, reconnect), `detector` (YOLOv8), `tracker` (ByteTrack + IoU per-camera tracking), `pose_analyzer` (COCO-17 keypoints + IoU association), `reference_frame` (`MotionGate` gates YOLO, `AdaptiveSampler` gates VLM), `pin_tracker` (records the path of a clicked person to MP4).
 - `antifalse/`: the five gates — `threshold`, `debouncer` (N consecutive), `cooldown` (+ zone mask, reference frame). Exposed as `AntiFalsePositive`.
-- `actions/`: `dispatcher` (async) → `hikvision` (ISAPI relay), `webhook` (ntfy/Discord), `logger` (JSONL).
+- `actions/`: `dispatcher` (async) → `hikvision` (ISAPI relay), `messaging` (Telegram bot, WhatsApp via CallMeBot), `webhook` (ntfy/Discord/generic), `logger` (JSONL).
 - `api/`: FastAPI routers (`cameras`, `rooms`, `conditions`, `zones`, `events`, `stream` = MJPEG, `ws` = WebSockets). `models/`: SQLAlchemy `Condition` / `Event` / `Zone`. `vlm/client.py`: Ollama OpenAI-compatible client, JSON mode.
-- `frontend/`: React 18 + Vite + Tailwind; `HotelMap` (venue landing) → `RoomView` → `LiveView`/`CameraGrid`, plus `ConditionEditor`, `EventLog`, `ZoneDrawer`. State arrives via MJPEG stream + WebSocket events.
+- `frontend/`: React 18 + Vite + Tailwind. `HotelMap` (venue landing) → `RoomView` → `LiveView`/`CameraGrid`, plus `Dashboard`, `ConditionEditor`, `EventLog`/`EventFeed`, `ZoneDrawer`. State arrives via MJPEG + WebSocket.
 
 ## Conventions
 
-- A **Condition belongs to a camera** (`camera_id`); `null` = global (runs on every camera). Creating/editing a condition hot-reloads the affected worker(s) via `get_manager().reload(...)`.
-- The compiler accepts **EN + RO** natural language (deterministic rules first, VLM fallback). README/docs mix Romanian and English — that's intentional.
-- Build progress is logged step-by-step in `PROGRESS.md` (PAS 0 → 15); commit messages follow `type: summary` (`feat:`, `perf:`, `ui:`).
+- A **Condition belongs to a camera** (`camera_id`); `null` = runs on every camera. Creating/editing a condition hot-reloads the affected worker(s) via `get_manager().reload(...)`.
+- The compiler accepts **EN + RO** natural language (deterministic rules first, VLM fallback). README/docs mix Romanian and English — intentional.
+- Commit messages follow `type: summary` (`feat:`, `perf:`, `fix:`, `refactor:`).
