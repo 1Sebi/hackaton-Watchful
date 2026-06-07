@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend.api import cameras, conditions, events, rooms, stream, ws, zones
+from backend.api import cameras, conditions, events, rooms, stream, track, ws, zones
 from backend.core.camera_manager import get_manager
 from backend.database import init_db
 
@@ -42,6 +42,7 @@ app.include_router(conditions.router)
 app.include_router(events.router)
 app.include_router(zones.router)
 app.include_router(stream.router)
+app.include_router(track.router)
 app.include_router(ws.router)
 
 

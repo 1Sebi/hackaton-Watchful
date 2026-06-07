@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="the place mamaia">
+  <rect width="64" height="64" rx="14" fill="#070a10"/>
+  <text x="32" y="30"
+        text-anchor="middle"
+        font-family="'Helvetica Neue', Helvetica, Arial, sans-serif"
+        font-weight="900" font-size="22" letter-spacing="-1" fill="#ffffff">the</text>
+  <text x="32" y="50"
+        text-anchor="middle"
+        font-family="'Helvetica Neue', Helvetica, Arial, sans-serif"
+        font-weight="900" font-size="22" letter-spacing="-1" fill="#22d3a8">place</text>
+</svg>

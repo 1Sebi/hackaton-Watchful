@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
 import { API, activateCamera, getCameras, type CameraTile } from "../api";
+import { fmtPersons, heatFor } from "../lib/occupancy";
 
-// Room-grouped venue grid: ONE card per room, containing all that room's camera
-// feeds at once, with a room-level people counter (sum of its cameras). Click a
-// feed to make it the AI-active camera (full detection + its own rules). One
-// active at a time = the realistic budget on a CPU-only box; inactive cameras
-// still report a periodic per-tile count.
+// Room-grouped venue grid: ONE glass card per room holding all that room's
+// camera feeds, with a room-level people counter. Click a feed to make it the
+// AI-focused camera. (Standalone alternate layout — the main shell uses the
+// Dashboard + RoomView; kept available and styled consistently.)
 export default function CameraGrid({
   activeId,
   onActivate,
@@ -36,7 +36,6 @@ export default function CameraGrid({
 
   if (cams.length === 0) return null;
 
-  // group cameras by room, preserving first-seen order
   const rooms: { room: string; cams: CameraTile[] }[] = [];
   const at = new Map<string, number>();
   for (const c of cams) {
@@ -47,7 +46,6 @@ export default function CameraGrid({
     rooms[at.get(c.room)!].cams.push(c);
   }
 
-  // room count = sum of its cameras' counts (null if none reported yet)
   const roomCount = (rc: CameraTile[]): number | null => {
     const known = rc.filter((c) => c.persons != null);
     return known.length ? known.reduce((s, c) => s + (c.persons || 0), 0) : null;
@@ -57,26 +55,28 @@ export default function CameraGrid({
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
       {rooms.map(({ room, cams: rc }) => {
         const count = roomCount(rc);
-        // the active camera is shown in the big view — don't stream it twice
+        const heat = heatFor(count);
         const tiles = rc.filter((c) => c.id !== activeId);
         return (
-          <div key={room} className="rounded-xl border border-edge bg-black/20 p-2">
+          <div key={room} className="glass p-2.5">
             <div className="mb-2 flex items-center justify-between px-1">
-              <span className="text-sm font-semibold">{room}</span>
-              <span className="rounded bg-black/70 px-2 py-0.5 text-xs font-bold text-white">
-                🧍 {count == null ? "—" : count}
+              <span className="text-sm font-semibold text-slate-100">{room}</span>
+              <span
+                className={`rounded-lg border px-2 py-0.5 text-xs font-bold tabular-nums ${heat.bg} ${heat.ring} ${heat.text}`}
+              >
+                🧍 {fmtPersons(count)}
               </span>
             </div>
-            <div className={`grid gap-1 ${tiles.length > 1 ? "grid-cols-2" : "grid-cols-1"}`}>
+            <div className={`grid gap-1.5 ${tiles.length > 1 ? "grid-cols-2" : "grid-cols-1"}`}>
               {tiles.map((c) => (
                 <button
                   key={c.id}
                   onClick={() => click(c.id)}
                   title={`${c.name}${c.persons != null ? ` · ${c.persons} persons` : ""}`}
-                  className={`group relative overflow-hidden rounded-lg border bg-black transition ${
+                  className={`group relative overflow-hidden rounded-xl border bg-black transition ${
                     c.id === activeId
                       ? "border-accent ring-1 ring-accent"
-                      : "border-edge hover:border-slate-500"
+                      : "border-white/10 hover:border-white/30"
                   }`}
                 >
                   <img
@@ -86,7 +86,7 @@ export default function CameraGrid({
                     onError={(e) => ((e.target as HTMLImageElement).style.opacity = "0.2")}
                   />
                   {c.persons != null && rc.length > 1 && (
-                    <span className="absolute left-1 top-1 rounded bg-black/70 px-1 text-[10px] font-bold text-white">
+                    <span className="absolute left-1 top-1 rounded bg-black/65 px-1 text-[10px] font-bold text-white backdrop-blur">
                       🧍 {c.persons}
                     </span>
                   )}
@@ -96,7 +96,7 @@ export default function CameraGrid({
                     </span>
                   )}
                   {c.error && (
-                    <span className="absolute inset-x-0 bottom-0 bg-red-900/70 px-1 text-center text-[10px] text-red-100">
+                    <span className="absolute inset-x-0 bottom-0 bg-danger/70 px-1 text-center text-[10px] text-white">
                       offline
                     </span>
                   )}

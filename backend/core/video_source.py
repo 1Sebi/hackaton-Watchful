@@ -17,7 +17,13 @@ from typing import Optional, Union
 # artifacts ("PPS id out of range" on some HEVC cams) and infinite hangs on a
 # dead stream. (Validated against the live ThePlace NVRs.)
 os.environ.setdefault(
-    "OPENCV_FFMPEG_CAPTURE_OPTIONS", "rtsp_transport;tcp|stimeout;8000000"
+    "OPENCV_FFMPEG_CAPTURE_OPTIONS",
+    # tcp = no lossy UDP; stimeout 5s = socket I/O timeout so a silently stalled
+    # stream errors out (and we reconnect) instead of hanging read() forever;
+    # fflags;discardcorrupt = FFmpeg DROPS corrupt/partial frames instead of
+    # emitting the grey blocky smear ("purici") when it decodes a P-frame without
+    # its keyframe (the "PPS id out of range / Could not find ref" cases).
+    "rtsp_transport;tcp|stimeout;5000000|fflags;discardcorrupt",
 )
 # Quiet FFmpeg's HEVC decoder chatter ("PPS id out of range", "Could not find ref
 # with POC") — harmless startup/keyframe warnings on some sub-streams; the agent
@@ -39,9 +45,10 @@ class VideoSource:
     def __init__(
         self,
         source: Union[int, str] = 0,
-        max_reconnect: int = 5,
-        reconnect_delay: float = 1.5,
+        max_reconnect: int = 60,   # keep retrying a flaky focus stream (resets on success)
+        reconnect_delay: float = 1.0,
         continuous: bool = True,
+        stall_timeout: float = 6.0,  # no fresh frame for this long -> force reopen
     ) -> None:
         self.source = self._coerce(source)
         self.max_reconnect = max_reconnect
@@ -52,17 +59,26 @@ class VideoSource:
         #   inactive grid tile read at ~3 fps decodes ~3 fps (not ~24) — the lever
         #   that makes ~18 simultaneous sub-streams affordable on CPU.
         self.continuous = continuous
+        self.stall_timeout = stall_timeout
         self._cap: Optional[cv2.VideoCapture] = None
         self._reconnects = 0
         self._latest: Optional[np.ndarray] = None
+        self._last_frame_ts = time.time()  # for the stall watchdog
         self._frame_lock = threading.Lock()
         self._read_lock = threading.Lock()  # serialize on-demand cap.read()
         self._grab_thread: Optional[threading.Thread] = None
+        self._watchdog_thread: Optional[threading.Thread] = None
         self._stop = threading.Event()
         self.open()
         if self.continuous and not self.is_file:
             self._grab_thread = threading.Thread(target=self._grab_loop, daemon=True)
             self._grab_thread.start()
+            # watchdog: a TCP stream can connect then silently stop sending data;
+            # cap.read() then blocks past stimeout on some builds. The watchdog
+            # force-releases the cap so the grabber errors out and reopens, instead
+            # of the feed freezing on the last frame forever.
+            self._watchdog_thread = threading.Thread(target=self._watchdog_loop, daemon=True)
+            self._watchdog_thread.start()
 
     # ── helpers ──────────────────────────────────────────────────────────
     @staticmethod
@@ -110,15 +126,17 @@ class VideoSource:
         if not self._cap.isOpened():
             raise RuntimeError(f"VideoSource: could not open source {self.source!r}")
         if self.is_rtsp:
-            # first ~3-5 frames are gray/partial until the decoder hits a keyframe
-            for _ in range(5):
+            # the first frames are gray/partial until the decoder hits a keyframe;
+            # discard a few so a (re)connect never paints a half-decoded GOP.
+            for _ in range(8):
                 self._cap.read()
+        self._last_frame_ts = time.time()
 
     def release(self) -> None:
         self._stop.set()
-        t = self._grab_thread
-        if t is not None and t.is_alive():
-            t.join(timeout=2.0)
+        for t in (self._grab_thread, self._watchdog_thread):
+            if t is not None and t.is_alive():
+                t.join(timeout=2.0)
         if self._cap is not None:
             self._cap.release()
             self._cap = None
@@ -179,12 +197,29 @@ class VideoSource:
             ok, frame = cap.read()
             if ok and frame is not None:
                 self._reconnects = 0
+                self._last_frame_ts = time.time()
                 with self._frame_lock:
                     self._latest = frame
                 continue
             # transient failure (RTSP drop) -> bounded reconnect
             if not self._try_reopen():
                 break
+
+    def _watchdog_loop(self) -> None:
+        """Force-reopen a silently stalled continuous stream so the feed can't freeze."""
+        while not self._stop.is_set():
+            if self._stop.wait(2.0):
+                return
+            if time.time() - self._last_frame_ts <= self.stall_timeout:
+                continue
+            cap = self._cap  # snapshot — releasing unblocks the grabber's cap.read()
+            try:
+                if cap is not None:
+                    cap.release()
+            except Exception:  # noqa: BLE001
+                pass
+            # debounce so we don't release every 2s while the grabber reopens
+            self._last_frame_ts = time.time()
 
     def _reopen_once(self) -> Optional[np.ndarray]:
         """On-demand (non-continuous) reconnect: try to reopen + grab one frame."""

@@ -86,24 +86,30 @@ def _draw_hud(img, state):
         cv2.putText(img, bar, (8, h - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 200, 255), 2)
 
 
-def draw_overlay(frame, dets, pose_map, tracker=None, state=None, zones=None):
+def draw_overlay(frame, dets, pose_map, tracker=None, state=None, zones=None, boxes=True):
     img = frame.copy()
     _draw_zones(img, zones)
     # motion trails disabled (not needed right now) — re-enable by restoring
     # _draw_trails(img, tracker) here.
     _draw_skeletons(img, pose_map)
-    for d in dets:
-        x1, y1, x2, y2 = d.bbox
-        col = _color(d.track_id)
-        cv2.rectangle(img, (x1, y1), (x2, y2), col, 2)
-        dur = tracker.duration_of(d.track_id) if (tracker and d.track_id) else 0.0
-        label = f"#{d.track_id} {dur:.0f}s"
-        pose = (pose_map or {}).get(d.track_id) if d.track_id else None
-        if pose is not None and _hand_raised(pose):
-            label += " HAND^"
-        (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.55, 2)
-        cv2.rectangle(img, (x1, max(0, y1 - th - 8)), (x1 + tw + 6, y1), col, -1)
-        cv2.putText(img, label, (x1 + 3, max(12, y1 - 5)),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 0, 0), 2)
-    _draw_hud(img, state)
+    # boxes=False on the focus camera: the live-view draws its own smooth (60fps-
+    # interpolated) clickable boxes on top, so baking jumpy 2-3/s boxes here would
+    # just double them up. Skeletons/zones stay (they aren't the click targets).
+    if boxes:
+        for d in dets:
+            x1, y1, x2, y2 = d.bbox
+            col = _color(d.track_id)
+            cv2.rectangle(img, (x1, y1), (x2, y2), col, 2)
+            dur = tracker.duration_of(d.track_id) if (tracker and d.track_id) else 0.0
+            label = f"#{d.track_id} {dur:.0f}s"
+            pose = (pose_map or {}).get(d.track_id) if d.track_id else None
+            if pose is not None and _hand_raised(pose):
+                label += " HAND^"
+            (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.55, 2)
+            cv2.rectangle(img, (x1, max(0, y1 - th - 8)), (x1 + tw + 6, y1), col, -1)
+            cv2.putText(img, label, (x1 + 3, max(12, y1 - 5)),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 0, 0), 2)
+    # HUD bar (WATCHFUL / FPS / AI / persons / conditions + LAST) disabled — that
+    # info lives in the UI chrome now and the baked-in black/yellow bar overlapped
+    # the live-view overlay. Re-enable by restoring: _draw_hud(img, state)
     return img

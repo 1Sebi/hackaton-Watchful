@@ -41,6 +41,68 @@ export interface Condition {
   predicate: Predicate;
   action: { type?: string; [k: string]: unknown };
   enabled: boolean;
+  camera_id?: string | null;
+}
+
+// plain-language explanation of a compiled predicate (from /conditions/preview)
+export interface PredicateExplain {
+  summary: string;
+  reliability: "precise" | "visual";
+  reliable: boolean;
+  warnings: string[];
+}
+export interface ActionCheck {
+  ok: boolean;
+  error: string | null;
+  warnings: string[];
+}
+export interface PredicatePreview extends Predicate {
+  explain: PredicateExplain;
+  action_check?: ActionCheck;
+}
+export interface ActionField {
+  key: string;
+  label: string;
+  type: "number" | "text" | "select";
+  default: unknown;
+  options?: { value: string; label: string }[];
+  when?: Record<string, string>;
+}
+export interface ActionCapability {
+  type: string;
+  label: string;
+  configured: boolean;
+  always?: boolean;
+  hint: string;
+  fields: ActionField[];
+}
+
+export async function getCapabilities(): Promise<ActionCapability[]> {
+  return (await getJSON<{ actions: ActionCapability[] }>("/conditions/capabilities")).actions;
+}
+export async function previewCondition(
+  text: string,
+  action?: unknown,
+  count?: number | null,
+): Promise<PredicatePreview> {
+  return postJSON<PredicatePreview>("/conditions/preview", { text, action, count });
+}
+export async function listConditions(cameraId?: string | null): Promise<Condition[]> {
+  return getJSON<Condition[]>(cameraId ? `/conditions?camera_id=${cameraId}` : "/conditions");
+}
+export async function createCondition(body: {
+  text: string;
+  action: unknown;
+  camera_id?: string | null;
+  enabled?: boolean;
+  count?: number | null;
+}): Promise<Condition & { warnings?: string[]; detail?: string }> {
+  const r = await fetch(API + "/conditions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return r.json();
 }
 export interface EventItem {
   id?: number;
@@ -115,4 +177,45 @@ export interface Zone {
   id: number;
   name: string;
   polygon: number[][];
+}
+
+// ── person pin-tracking ──────────────────────────────────────────────
+export interface TrackBox {
+  id: number;
+  bbox: [number, number, number, number]; // x1,y1,x2,y2 in frame pixels
+  center: [number, number];
+  dur: number;
+}
+export interface DetectionsState {
+  camera_id: string | null;
+  frame_w: number;
+  frame_h: number;
+  pinned_id: number | null;
+  tracks: TrackBox[];
+}
+export interface PinStatus {
+  pinned: boolean;
+  camera_id?: string;
+  camera_name?: string;
+  track_id?: number;
+  frames?: number;
+  duration?: number;
+}
+export interface PinStopResult {
+  ok: boolean;
+  error?: string;
+  frames?: number;
+  duration?: number;
+  track_id?: number;
+  camera_name?: string;
+  telegram?: { ok: boolean; sent?: number; recipients?: number; error?: string };
+}
+export async function getDetections(cameraId?: string): Promise<DetectionsState> {
+  return getJSON<DetectionsState>(`/track/detections${cameraId ? `?camera_id=${cameraId}` : ""}`);
+}
+export async function pinTrack(cameraId: string, trackId: number): Promise<PinStatus> {
+  return postJSON<PinStatus>("/track/pin", { camera_id: cameraId, track_id: trackId });
+}
+export async function stopPin(): Promise<PinStopResult> {
+  return postJSON<PinStopResult>("/track/stop", {});
 }

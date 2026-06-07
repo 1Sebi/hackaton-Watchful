@@ -1,21 +1,22 @@
 import { useEffect, useState } from "react";
 import StatusBar from "./components/StatusBar";
-import HotelMap from "./components/HotelMap";
+import Logo from "./components/ui/Logo";
+import Dashboard from "./components/Dashboard";
 import RoomView from "./components/RoomView";
-import ZoneDrawer from "./components/ZoneDrawer";
 import { activateRoom, getRooms } from "./api";
-// NOTE: ConditionEditor / ConditionsList / EventLog are intentionally not
-// rendered (UI hidden per user request). The components still live under
-// ./components and can be re-mounted in the right column anytime.
+import { useAgentState } from "./hooks/useVenueData";
+// NOTE: ConditionEditor / ConditionsList live under ./components and can be
+// re-mounted in the room view's right rail anytime.
 
 type View = { kind: "map" } | { kind: "room"; roomId: string };
 
 export default function App() {
   const [view, setView] = useState<View>({ kind: "map" });
   const [activeId, setActiveId] = useState("");
+  const agent = useAgentState();
 
-  // initial state: stay on the map; pick up whichever room is already active on
-  // the backend so the editing focus has a sensible default if user jumps in.
+  // pick up whichever room is already active on the backend so the editing
+  // focus has a sensible default if the user jumps straight into a room.
   useEffect(() => {
     getRooms()
       .then((s) => {
@@ -28,8 +29,7 @@ export default function App() {
   }, []);
 
   const enterRoom = async (roomId: string) => {
-    // optimistic: switch UI immediately, fire backend activation in the back
-    setView({ kind: "room", roomId });
+    setView({ kind: "room", roomId }); // optimistic
     const res = await activateRoom(roomId).catch(() => null);
     if (res) {
       const r = res.rooms.find((x) => x.id === roomId);
@@ -37,52 +37,36 @@ export default function App() {
     }
   };
 
-  const backToMap = () => {
-    setView({ kind: "map" });
-  };
+  const backToMap = () => setView({ kind: "map" });
 
   return (
     <div className="min-h-screen">
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-edge px-6 py-3">
-        <div className="flex items-center gap-2">
-          <span className="text-lg">👁</span>
-          <h1 className="text-lg font-bold">Watchful</h1>
-          <span className="hidden text-xs text-slate-500 sm:inline">
-            tell your camera what matters — 100% local
-          </span>
+      <header className="sticky top-0 z-30 border-b border-white/10 bg-base/70 backdrop-blur-xl">
+        <div className="mx-auto flex max-w-[1500px] flex-wrap items-center justify-between gap-3 px-5 py-3">
+          <div className="flex items-center gap-4">
+            <Logo />
+            <span className="hidden h-8 w-px bg-white/10 sm:block" />
+            <div className="hidden flex-col leading-tight sm:flex">
+              <span className="flex items-center gap-1.5 text-sm font-bold text-white">
+                <span className="text-base">👁</span> Watchful
+              </span>
+            </div>
+          </div>
+          <StatusBar agent={agent} />
         </div>
-        <StatusBar />
       </header>
 
-      <main className="grid grid-cols-1 gap-4 p-4 lg:grid-cols-3">
-        <section className="space-y-4 lg:col-span-2">
-          {view.kind === "map" ? (
-            <HotelMap onEnterRoom={enterRoom} />
-          ) : (
-            <>
-              <RoomView
-                roomId={view.roomId}
-                activeId={activeId}
-                onSetActiveCam={(camId) => setActiveId(camId)}
-                onBack={backToMap}
-              />
-              <ZoneDrawer activeId={activeId} />
-            </>
-          )}
-        </section>
-
-        <section className="space-y-4">
-          {view.kind === "map" && (
-            <div className="rounded-xl border border-edge bg-black/20 p-4 text-sm text-slate-400">
-              <p className="mb-2 text-base font-semibold text-slate-200">How it works</p>
-              <ul className="list-disc space-y-1 pl-4 text-[12px]">
-                <li>Pick a room on the map to focus the AI on it.</li>
-                <li>All cameras in that room get detection at once (batched YOLO).</li>
-                <li>Other rooms stay light — only periodic people counts.</li>
-              </ul>
-            </div>
-          )}
-        </section>
+      <main className="mx-auto max-w-[1500px] px-5 py-5">
+        {view.kind === "map" ? (
+          <Dashboard agent={agent} onEnterRoom={enterRoom} />
+        ) : (
+          <RoomView
+            roomId={view.roomId}
+            activeId={activeId}
+            onSetActiveCam={setActiveId}
+            onBack={backToMap}
+          />
+        )}
       </main>
     </div>
   );

@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 230" fill="none" role="img" aria-label="the place mamaia">
+  <!-- Wordmark recreated from the brand logo: heavy lowercase "the place"
+       over spaced "mamaia". Uses currentColor so it can be themed (white on
+       dark, ink on light). -->
+  <text x="300" y="118"
+        text-anchor="middle"
+        font-family="'Helvetica Neue', Helvetica, Arial, sans-serif"
+        font-weight="900"
+        font-size="150"
+        letter-spacing="-6"
+        fill="currentColor">the place</text>
+  <text x="300" y="200"
+        text-anchor="middle"
+        font-family="'Helvetica Neue', Helvetica, Arial, sans-serif"
+        font-weight="400"
+        font-size="62"
+        letter-spacing="4"
+        fill="currentColor">mamaia</text>
+</svg>

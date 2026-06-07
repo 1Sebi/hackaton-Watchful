@@ -1,47 +1,42 @@
 import { useEffect, useState } from "react";
-import { WS_BASE, type AgentState } from "../api";
+import { type AgentState } from "../api";
+import LivePill from "./ui/LivePill";
 
-export default function StatusBar() {
-  const [s, setS] = useState<AgentState | null>(null);
-  useEffect(() => {
-    let ws: WebSocket;
-    let stop = false;
-    const connect = () => {
-      ws = new WebSocket(WS_BASE + "/ws/state");
-      ws.onmessage = (e) => setS(JSON.parse(e.data));
-      ws.onclose = () => {
-        if (!stop) setTimeout(connect, 1500);
-      };
-    };
-    connect();
-    return () => {
-      stop = true;
-      ws?.close();
-    };
-  }, []);
-
-  const dot = s?.running ? "bg-accent" : "bg-red-500";
+// Global status cluster for the header: live pill, key metrics, and a clock.
+// Agent state is owned by the shell (App) so the header and dashboard agree.
+export default function StatusBar({ agent }: { agent: AgentState | null }) {
+  const clock = useClock();
+  const running = !!agent?.running;
   return (
-    <div className="flex items-center gap-4 text-sm">
-      <span className="flex items-center gap-2">
-        <span className={`h-2.5 w-2.5 rounded-full ${dot}`} />
-        {s?.running ? "live" : "offline"}
-      </span>
-      {s?.camera_name && (
-        <span className="rounded bg-edge px-2 py-0.5 text-xs text-accent">📷 {s.camera_name}</span>
+    <div className="flex flex-wrap items-center gap-2">
+      <LivePill live={running} />
+      {agent?.camera_name && (
+        <span className="chip text-accent">📷 {agent.camera_name}</span>
       )}
-      <Stat label="FPS" value={s ? s.fps.toFixed(0) : "—"} />
-      <Stat label="persons" value={s ? String(s.persons) : "—"} />
-      <Stat label="rules" value={s ? String(s.conditions) : "—"} />
+      <div className="hidden items-center gap-1 sm:flex">
+        <Metric label="people" value={agent ? String(agent.persons) : "—"} />
+        <Metric label="fps" value={agent ? agent.fps.toFixed(agent.fps < 10 ? 1 : 0) : "—"} />
+        <Metric label="rules" value={agent ? String(agent.conditions) : "—"} />
+      </div>
+      <span className="chip tabular-nums text-slate-400">{clock}</span>
     </div>
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function Metric({ label, value }: { label: string; value: string }) {
   return (
-    <span className="flex items-center gap-1">
-      <span className="text-slate-400">{label}</span>
-      <span className="font-semibold text-slate-100">{value}</span>
+    <span className="flex items-baseline gap-1 rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-1">
+      <span className="text-sm font-bold tabular-nums text-slate-100">{value}</span>
+      <span className="text-[10px] uppercase tracking-wide text-slate-500">{label}</span>
     </span>
   );
+}
+
+function useClock(): string {
+  const [t, setT] = useState(() => new Date().toLocaleTimeString());
+  useEffect(() => {
+    const h = window.setInterval(() => setT(new Date().toLocaleTimeString()), 1000);
+    return () => window.clearInterval(h);
+  }, []);
+  return t;
 }

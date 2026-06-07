@@ -124,10 +124,16 @@ def _load_cameras():
     """
     path = _Path(__file__).resolve().parent / "cameras.json"
     cams, default = [], None
+    # Optional whitelist: ENABLED_ROOMS=Restaurant,Event Hall,Jacuzzi keeps only those
+    # rooms' cameras loaded (fewer concurrent 4K/RTSP streams = more CPU + stability +
+    # fewer decode artifacts). Empty/unset = load all. Fully reversible from .env.
+    _enabled = {r.strip() for r in os.environ.get("ENABLED_ROOMS", "").split(",") if r.strip()}
     try:
         spec = _json.loads(path.read_text(encoding="utf-8"))
         default = spec.get("default_active")
         for c in spec.get("cameras", []):
+            if _enabled and c.get("room") not in _enabled:
+                continue  # room not in the ENABLED_ROOMS whitelist
             ip, user, pw = _nvr_creds(str(c.get("nvr", "")))
             if not ip or not pw:
                 continue  # NVR creds not in .env -> skip this camera

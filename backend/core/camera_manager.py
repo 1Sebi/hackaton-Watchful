@@ -28,9 +28,11 @@ from typing import Dict, List, Optional
 import cv2
 
 from backend.actions.dispatcher import ActionDispatcher
+from backend.actions.messaging import send_telegram_video
 from backend.antifalse import AntiFalsePositive
 from backend.config import settings
 from backend.core.detector import PersonDetector
+from backend.core.pin_tracker import PinSession
 from backend.core.pose_analyzer import PoseAnalyzer
 from backend.core.reference_frame import AdaptiveSampler, MotionGate
 from backend.core.tracker import TrackManager
@@ -213,21 +215,27 @@ class CameraWorker:
     def _desired_source(self):
         """Which stream this worker should be on.
 
-        Only the single FOCUS camera (the one in the big view) opens the heavy
-        4K MAIN stream. Other cameras in the active room use the light 360p
-        SUB stream (continuous, so their tile + detection stay live). Inactive
-        cameras use the sub stream on-demand (tile counter only).
+        With the trimmed grid (~4 cameras, ≤2 per room on separate NVRs) every
+        camera in the ACTIVE room now opens the sharp 4K MAIN stream, not the 360p
+        sub — so the tiles are crisp, not pixelated. The focus runs 4K *continuous*
+        (low-latency big view + detection); non-focus room tiles run 4K *on-demand*
+        so they only decode at the tile refresh rate (GRID_TILE_FPS) and don't steal
+        CPU from the focus detect loop. Inactive cameras (other rooms, not rendered)
+        stay on the cheap sub on-demand until their room is opened.
 
-        Rationale: the NVR can't sustain several simultaneous 4K main streams —
-        opening 4K on every room camera starved the non-focus grabbers and froze
-        their tiles. One 4K at a time (the focus) keeps the big view sharp while
-        every other feed stays reliably live on the cheap sub stream.
+        (The old policy kept non-focus cameras on the sub stream because ~18
+        simultaneous 4K mains starved the NVR/grabbers; that ceiling is gone now
+        that only a handful of cameras load.)
         """
+        # NOTE: 3 of the 4 cameras live on NVR2 (.60), which cannot serve 3 concurrent
+        # 4K MAIN streams — opening 4K on inactive cams too makes every open fail. So
+        # only the ACTIVE room's cameras (the ones on screen) go 4K; inactive cams stay
+        # on the cheap sub until their room is opened, then upgrade to 4K.
         if not self.is_active:
-            return self.sub_url, False                      # inactive tile: on-demand
+            return self.sub_url, False                      # inactive: cheap sub, on-demand
         if self.manager.active_id == self.id:
             return self.main_url, True                      # focus: 4K main, continuous
-        return self.sub_url, True                           # room, non-focus: sub, continuous
+        return self.main_url, False                         # room tile: 4K main, on-demand
 
     def switch_stream(self) -> None:
         """Reopen on the stream that matches the current active/inactive state,
@@ -259,7 +267,7 @@ class CameraWorker:
             # old source keeps feeding the render loop until then (no frozen frame).
             # Bounded so a dead 4K stream can't hang here forever — fall back to the
             # swap anyway (render holds last frame / placeholder, reconnect takes over).
-            deadline = time.time() + 8.0
+            deadline = time.time() + 3.0  # don't block the view long on a slow 4K
             while self.running and time.time() < deadline:
                 if new.read() is not None:
                     break
@@ -482,7 +490,10 @@ class CameraWorker:
             with self._res_lock:
                 dets = list(self._last_dets)
                 pose_map = dict(self._last_pose_map)
-            return _draw_overlay(frame, dets, pose_map, self.tracker, self._hud_state(), self._zones)
+            # boxes=False: the live-view overlay draws its own 60fps-smooth clickable
+            # boxes on top, so we publish a clean focus frame (zones/skeleton only).
+            return _draw_overlay(frame, dets, pose_map, self.tracker, self._hud_state(),
+                                 self._zones, boxes=False)
         return self._draw_tile(frame, active)
 
     def _draw_tile(self, frame, active: bool):
@@ -588,6 +599,9 @@ class CameraManager:
         self._room_thread: Optional[threading.Thread] = None
         self._room_stop = threading.Event()
         self.room_detect_fps: float = 0.0
+        # ── pinned-person tracking/recording (one active session) ──
+        self._pin: Optional[PinSession] = None
+        self._pin_lock = threading.Lock()
 
     def start(self) -> None:
         # Set the default room BEFORE workers spin up, so each worker reads the
@@ -773,6 +787,9 @@ class CameraManager:
                 with w._res_lock:
                     w._last_dets = tracked
 
+                # grow the pinned-person clip (no-op unless this is the pinned cam)
+                self._pin_record(w, frame, tracked, now)
+
                 with w._cfg_lock:
                     conditions = list(w._conditions)
                     zones = dict(w._zones)
@@ -852,6 +869,91 @@ class CameraManager:
         else:
             for w in self.workers.values():
                 w.reload()
+
+    # ── pinned-person tracking ───────────────────────────────────────────
+    def detections_for(self, camera_id: Optional[str] = None) -> dict:
+        """Current per-person boxes for a camera (drives the click-to-pin overlay).
+
+        Defaults to the focus camera. bbox coords are in the published-frame pixel
+        space, which equals the MJPEG image, so the frontend maps a click via the
+        <img> natural size.
+        """
+        cam_id = camera_id or self.active_id
+        w = self.workers.get(cam_id) if cam_id else None
+        if w is None:
+            return {"camera_id": cam_id, "frame_w": 0, "frame_h": 0, "pinned_id": None, "tracks": []}
+        with w._res_lock:
+            dets = list(w._last_dets)
+            frame = w._last_frame
+        fh, fw = (int(frame.shape[0]), int(frame.shape[1])) if frame is not None else (0, 0)
+        tracks = []
+        for d in dets:
+            if d.track_id is None:
+                continue
+            t = w.tracker.tracks.get(d.track_id)
+            x1, y1, x2, y2 = d.bbox
+            tracks.append({
+                "id": int(d.track_id),
+                "bbox": [int(x1), int(y1), int(x2), int(y2)],
+                "center": [int((x1 + x2) // 2), int((y1 + y2) // 2)],
+                "dur": round(t.duration, 1) if t else 0.0,
+            })
+        with self._pin_lock:
+            pinned = self._pin.track_id if (self._pin and self._pin.camera_id == cam_id) else None
+        return {"camera_id": cam_id, "frame_w": fw, "frame_h": fh,
+                "pinned_id": pinned, "tracks": tracks}
+
+    def pin_start(self, camera_id: str, track_id: int) -> dict:
+        w = self.workers.get(camera_id)
+        if w is None:
+            return {"ok": False, "error": "unknown camera"}
+        with self._pin_lock:
+            if self._pin is not None:  # drop any previous (unsent) session
+                with self._pin.lock:
+                    self._pin.finalize()
+            self._pin = PinSession(camera_id, w.name, int(track_id))
+            status = self._pin.status()
+        return {"ok": True, **status}
+
+    def pin_status(self) -> dict:
+        with self._pin_lock:
+            p = self._pin
+        return p.status() if p else {"pinned": False}
+
+    def pin_stop(self) -> dict:
+        """Finalize the clip and send it to Telegram; returns the result."""
+        with self._pin_lock:
+            p = self._pin
+            self._pin = None
+        if p is None:
+            return {"ok": False, "error": "nothing pinned"}
+        with p.lock:
+            info = p.finalize()
+        if not info["ok"]:
+            return {"ok": False, "error": "no frames recorded (person was not seen)", **info}
+        caption = (f"🎯 Watchful — tracked person #{info['track_id']} on "
+                   f"{info['camera_name']} · {info['duration']}s, {info['frames']} frames")
+        tg = send_telegram_video(info["path"], caption)
+        return {"ok": tg.get("ok", False), "telegram": tg, **info}
+
+    def _pin_record(self, worker: "CameraWorker", frame, dets: list, now: float) -> None:
+        """Called by the focus detect loop each cycle to grow the pinned clip."""
+        with self._pin_lock:
+            p = self._pin
+        if p is None or p.camera_id != worker.id:
+            return
+        det = next((d for d in dets if d.track_id == p.track_id), None)
+        if det is None:
+            return  # pinned person not visible this cycle (occluded/left) — skip frame
+        track = worker.tracker.tracks.get(p.track_id)
+        try:
+            with p.lock:
+                with self._pin_lock:
+                    active = self._pin is p
+                if active:
+                    p.record(frame, det, track, now)
+        except Exception:  # noqa: BLE001 — recording must never kill the detect loop
+            pass
 
 
 _manager: Optional[CameraManager] = None

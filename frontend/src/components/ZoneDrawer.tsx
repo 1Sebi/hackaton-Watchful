@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { API, del, getJSON, postJSON, type Zone } from "../api";
 
-function snapUrl(activeId: string): string {
-  const path = activeId ? `/stream/${activeId}/snapshot.jpg` : "/stream/snapshot.jpg";
-  return API + path + "?ts=" + Date.now();
+// Live MJPEG of the focus camera (with detection overlay) — NOT a frozen
+// snapshot. The ``key`` (live nonce) forces a clean <img> remount on camera
+// switch / manual reconnect so the stream never sticks on a stale connection.
+function liveUrl(activeId: string): string {
+  const path = activeId ? `/stream/${activeId}/live.mjpg` : "/stream/live.mjpg";
+  return API + path;
 }
 
 export default function ZoneDrawer({ activeId }: { activeId: string }) {
@@ -11,13 +14,14 @@ export default function ZoneDrawer({ activeId }: { activeId: string }) {
   const [points, setPoints] = useState<[number, number][]>([]);
   const [name, setName] = useState("");
   const [zones, setZones] = useState<Zone[]>([]);
-  const [snap, setSnap] = useState(snapUrl(activeId));
+  // bump to remount the <img> (reconnect the MJPEG stream)
+  const [nonce, setNonce] = useState(0);
 
   const load = async () =>
     setZones(await getJSON<Zone[]>(activeId ? `/zones?camera_id=${activeId}` : "/zones"));
   useEffect(() => {
-    setSnap(snapUrl(activeId)); // fresh snapshot for the newly active camera
     setPoints([]);
+    setNonce((n) => n + 1); // reconnect the live stream to the new camera
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeId]);
@@ -47,9 +51,16 @@ export default function ZoneDrawer({ activeId }: { activeId: string }) {
 
   return (
     <div className="rounded-xl border border-edge bg-panel p-4">
-      <h2 className="mb-2 text-sm font-semibold text-slate-200">Zones — click to draw a polygon</h2>
+      <h2 className="mb-2 text-sm font-semibold text-slate-200">Live view — click to draw a zone polygon</h2>
       <div className="relative inline-block cursor-crosshair select-none" onClick={click}>
-        <img ref={imgRef} src={snap} className="block w-full rounded-lg border border-edge" alt="snapshot" />
+        <img
+          ref={imgRef}
+          key={`${activeId}-${nonce}`}
+          src={liveUrl(activeId)}
+          className="block w-full rounded-lg border border-edge"
+          alt="live camera feed with overlays"
+          onError={(e) => ((e.target as HTMLImageElement).style.opacity = "0.25")}
+        />
         <svg className="pointer-events-none absolute inset-0 h-full w-full">
           {points.length > 0 && (
             <polygon
@@ -76,9 +87,9 @@ export default function ZoneDrawer({ activeId }: { activeId: string }) {
           Clear
         </button>
         <button
-          onClick={() => setSnap(snapUrl(activeId))}
+          onClick={() => setNonce((n) => n + 1)}
           className="rounded-lg border border-edge px-3 py-1.5 text-sm"
-          title="refresh snapshot"
+          title="reconnect live stream"
         >
           ↻
         </button>
