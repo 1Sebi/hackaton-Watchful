@@ -41,24 +41,15 @@ async def ws_state(ws: WebSocket):
             payload["active_room"] = grid.get("active_room")
             payload["cameras"] = grid["cameras"]
             # In room mode the meaningful HUD number is the total people across
-            # all room cameras (not just the focused one). Override persons +
-            # rules with the aggregate so StatusBar / overlays show the right
-            # picture regardless of which camera the user is editing.
+            # all room cameras (not just the focused one). Every visible
+            # camera runs full detection now, so tracker.active_count is the
+            # honest live number for each — sum them.
             room_cams = mgr.cams_in_room(mgr.active_room_id)
             if room_cams:
-                total = 0
-                rules = 0
-                known = False
-                for w in room_cams:
-                    v = w.tracker.active_count if w.is_active else w.tile_persons
-                    if v is not None:
-                        total += int(v)
-                        known = True
-                    rules += len([c for c in w._conditions if c["enabled"]])
-                if known:
-                    payload["persons"] = total
-                payload["conditions"] = rules
-                payload["room_detect_fps"] = mgr.room_detect_fps
+                payload["persons"] = sum(w.tracker.active_count for w in room_cams)
+                payload["conditions"] = sum(
+                    len([c for c in w._conditions if c["enabled"]]) for w in room_cams
+                )
             await ws.send_json(payload)
             await asyncio.sleep(0.5)
     except WebSocketDisconnect:

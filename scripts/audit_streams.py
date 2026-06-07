@@ -1,18 +1,19 @@
-"""Audit each camera's Hikvision stream profiles (main + sub) via ISAPI.
+"""Audit each camera's Hikvision SUB stream — the single source of truth.
 
-For every camera in backend/cameras.json this:
-  1. GETs /ISAPI/Streaming/channels/<channelID> for BOTH the main (x01) and
-     sub (x02) profile, scraping resolution / fps / bitrate / codec.
-  2. Optionally opens the sub RTSP URL and measures real decoded resolution
-     + frames per second (use --probe).
+Per camera in backend/cameras.json this:
+  1. GETs /ISAPI/Streaming/channels/<sub_channel_id> via Hikvision ISAPI and
+     scrapes resolution / fps / bitrate / codec.
+  2. With --probe, also opens the sub RTSP URL and measures real decoded
+     resolution + FPS (this is what the app actually consumes).
 
-Goal: get factual numbers about what each stream actually delivers, so we
-can decide which sub-streams to reconfigure for detection quality.
+We audit ONLY the sub-stream because the app uses only the sub-stream — one
+stream per camera, no main/sub toggling. Reconfigure the sub profile via
+upgrade_substreams.py if detection quality isn't good enough.
 
 Usage:
   python scripts/audit_streams.py               # ISAPI only, fast
   python scripts/audit_streams.py --probe       # also open RTSP and measure
-  python scripts/audit_streams.py --probe --only jacuzzi,event_hall  # subset
+  python scripts/audit_streams.py --probe --only jacuzzi,event_hall
 """
 from __future__ import annotations
 
@@ -78,7 +79,7 @@ def _isapi_get_channel(ip: str, user: str, pw: str, channel_id: int, timeout: fl
         return {"error": f"net: {e}"}
     if r.status_code != 200:
         return {"error": f"HTTP {r.status_code}"}
-    return _parse_profile(r.text) | {"raw_len": len(r.text)}
+    return _parse_profile(r.text)
 
 
 def _probe_rtsp(url: str, frames: int = 30) -> dict:
@@ -111,7 +112,7 @@ def _probe_rtsp(url: str, frames: int = 30) -> dict:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--probe", action="store_true",
-                    help="open RTSP sub stream and measure real decode")
+                    help="open the sub RTSP and measure real decoded resolution + fps")
     ap.add_argument("--only", help="comma-separated camera ids to include")
     ap.add_argument("--cameras", default="backend/cameras.json")
     args = ap.parse_args()
@@ -122,13 +123,12 @@ def main() -> int:
         wanted = {x.strip() for x in args.only.split(",")}
         cams = [c for c in cams if c["id"] in wanted]
 
-    # tabular header
-    print(f"{'id':<14} {'nvr':<5} {'sub_ch':<7} {'main: codec  res        fps  bitrate':<38} "
-          f"{'sub: codec  res        fps  bitrate':<38}"
-          + ("  probed_sub" if args.probe else ""))
-    print("-" * (160 if args.probe else 100))
+    header = f"{'id':<14} {'nvr':<5} {'ch':<5} {'sub: codec  res        fps  bitrate':<40}"
+    if args.probe:
+        header += "  probed"
+    print(header)
+    print("-" * (110 if args.probe else 70))
 
-    nvr_ok: dict[str, bool] = {}
     summary = []
     for c in cams:
         tag = str(c.get("nvr", ""))
@@ -137,21 +137,18 @@ def main() -> int:
             print(f"{c['id']:<14} {tag:<5}  -- NO CREDS in .env --")
             continue
         sub_ch = int(c["channel"])
-        main_ch = (sub_ch // 100) * 100 + 1
 
-        main_info = _isapi_get_channel(ip, user, pw, main_ch)
         sub_info = _isapi_get_channel(ip, user, pw, sub_ch)
-        nvr_ok[tag] = nvr_ok.get(tag, False) or "error" not in main_info
 
-        def fmt(p: dict) -> str:
-            if "error" in p:
-                return f"ERR {p['error'][:30]:<32}"
-            res = f"{p.get('w') or '?'}x{p.get('h') or '?'}"
-            br = p.get("bitrate_kbps")
+        if "error" in sub_info:
+            row = f"{c['id']:<14} {tag:<5} {sub_ch:<5} ERR {sub_info['error'][:60]}"
+        else:
+            res = f"{sub_info.get('w') or '?'}x{sub_info.get('h') or '?'}"
+            br = sub_info.get("bitrate_kbps")
             br_s = f"{br}kb" if br else "?kb"
-            return f"{(p.get('codec') or '?'):<6} {res:<10} {str(p.get('fps') or '?'):<4} {br_s:<8}"
-
-        row = (f"{c['id']:<14} {tag:<5} {sub_ch:<7} {fmt(main_info):<38} {fmt(sub_info):<38}")
+            sub_fmt = (f"{(sub_info.get('codec') or '?'):<6} {res:<10} "
+                       f"{str(sub_info.get('fps') or '?'):<4} {br_s:<8}")
+            row = f"{c['id']:<14} {tag:<5} {sub_ch:<5} {sub_fmt:<40}"
 
         probe = None
         if args.probe and "error" not in sub_info:
@@ -165,16 +162,13 @@ def main() -> int:
                         f"{probe['real_fps']}fps ({probe['frames']})")
 
         print(row)
-        summary.append({"id": c["id"], "nvr": tag, "main": main_info,
-                        "sub": sub_info, "probed_sub": probe})
+        summary.append({"id": c["id"], "nvr": tag, "channel": sub_ch,
+                        "sub": sub_info, "probed": probe})
 
-    print()
-    print(f"NVRs reachable via ISAPI: {sum(1 for v in nvr_ok.values() if v)}/{len(nvr_ok)}")
-
-    # dump JSON for follow-up tooling
     out = Path("eval/stream_audit.json")
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(summary, indent=2))
+    print()
     print(f"full audit JSON -> {out}")
     return 0
 

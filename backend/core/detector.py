@@ -115,25 +115,6 @@ class PersonDetector:
             return []
         return self._boxes_to_detections(results[0])
 
-    def detect_batch(self, frames: List[np.ndarray]) -> List[List[Detection]]:
-        """Batched plain detection over N frames in a single model call.
-
-        Ultralytics packs the frames into one inference pass (~1.5x cost for 4
-        frames vs 4× separate calls on CPU), enabling realistic multi-camera
-        detection on a CPU-only box. No tracking here — ByteTrack is per-stream
-        and can't be batched. The caller (a per-camera TrackManager) associates
-        these box-only detections with prior tracks via IoU.
-
-        Returns one list of Detection per input frame, same order.
-        """
-        if not frames:
-            return []
-        results = self.model.predict(
-            frames, classes=[0], conf=self.conf, iou=self.iou,
-            imgsz=self.imgsz, verbose=False,
-        )
-        return [self._boxes_to_detections(r) for r in results]
-
     def reset_tracker(self) -> None:
         """Clear ByteTrack state — call when switching which camera is detected,
         so track ids from the previous scene don't bleed into the new one."""

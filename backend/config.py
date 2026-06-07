@@ -24,25 +24,15 @@ class Settings:
     VLM_MODEL: str = os.environ.get("VLM_MODEL", "moondream")
     VLM_MODEL_HEAVY: str = os.environ.get("VLM_MODEL_HEAVY", "llama3.2-vision")
     DETECTION_MODEL: str = os.environ.get("DETECTION_MODEL", "yolov8m.pt")
-    # Adaptive model tiers — picked by CameraManager based on how many cameras
-    # are in the active room. 1 cam → MODEL_SINGLE (max quality), 2-3 →
-    # MODEL_MULTI (balanced), 4+ → MODEL_CROWD (fast on big batches). The
-    # default detector (above) is loaded first and the others are lazy-loaded
-    # on the first room switch that needs them.
-    MODEL_SINGLE: str = os.environ.get("MODEL_SINGLE", "yolov8m.pt")
-    MODEL_MULTI: str = os.environ.get("MODEL_MULTI", "yolov8s.pt")
-    MODEL_CROWD: str = os.environ.get("MODEL_CROWD", "yolov8n.pt")
     POSE_MODEL: str = os.environ.get("POSE_MODEL", "yolov8n-pose.pt")
     DETECTION_CONFIDENCE: float = _f("DETECTION_CONFIDENCE", 0.25)
-    # YOLO inference size (multiple of 32). 640 = default; 960 was nicer for
-    # very small/distant people but on CPU it costs 2-3x and starved the room
-    # detect loop (~0.4 FPS effective → HUD displayed "AI 0/s" + tracks died
-    # between detections). 640 is the sweet spot: fast enough on yolov8m/s/n
-    # CPU to stay real-time, still ample for indoor venue scenes.
+    # YOLO inference size (multiple of 32). 640 = sweet spot on CPU; bigger
+    # helps small/distant people at 2-3x cost.
     DETECTION_IMGSZ: int = int(_f("DETECTION_IMGSZ", 640))
     # Resize each captured frame to this width before detection/draw/encode.
-    # Lets you capture a sharp high-res stream (even 4K main) while keeping YOLO
-    # fast on CPU. 0 = no resize (use the native stream resolution).
+    # The single sub-stream (after upgrade_substreams.py) is already ~720p, so
+    # leaving FRAME_MAX_WIDTH=1280 is effectively a no-op — kept as a safety
+    # net for cameras whose sub profile someone bumped above 1280.
     FRAME_MAX_WIDTH: int = int(_f("FRAME_MAX_WIDTH", 1280))
     VLM_MAX_FPS: float = _f("VLM_MAX_FPS", 1.0)
     DATABASE_URL: str = os.environ.get("DATABASE_URL", "sqlite:///watchful.db")
@@ -51,46 +41,18 @@ class Settings:
     NTFY_BASE_URL: str = os.environ.get("NTFY_BASE_URL", "https://ntfy.sh")
     NTFY_TOPIC: str = os.environ.get("NTFY_TOPIC", "")
     # ── Telegram bot (action {"type":"telegram"}) ──
-    # Create a bot via @BotFather -> token; get your chat id from @userinfobot.
     TELEGRAM_BOT_TOKEN: str = os.environ.get("TELEGRAM_BOT_TOKEN", "")
     TELEGRAM_CHAT_ID: str = os.environ.get("TELEGRAM_CHAT_ID", "")
     # ── WhatsApp via CallMeBot (action {"type":"whatsapp"}) ──
-    # Free: message the CallMeBot number once to get an apikey (callmebot.com/whatsapp).
-    WHATSAPP_PHONE: str = os.environ.get("WHATSAPP_PHONE", "")      # e.g. +40712345678
+    WHATSAPP_PHONE: str = os.environ.get("WHATSAPP_PHONE", "")
     WHATSAPP_APIKEY: str = os.environ.get("WHATSAPP_APIKEY", "")
-    # ── Continuous monitoring ──
-    # Cameras that have ENABLED conditions are watched continuously (detect + track
-    # + evaluate + act) at this rate even when they are NOT the focus camera — so a
-    # rule like "someone in the jacuzzi -> relay" fires while you're viewing another
-    # room. Kept low so it barely dents the focus camera's budget. Cameras with no
-    # rules stay on the cheap periodic count only.
-    MONITOR_FPS: float = _f("MONITOR_FPS", 1.5)
-    # ── Multi-camera grid ──
-    # % of pixels that must change frame-to-frame for the OpenCV motion gate to
-    # consider the scene "moving" and run YOLO (lower = more sensitive).
+    # Motion gate: % of pixels that must change frame-to-frame to consider the
+    # scene "moving" (used by the tile motion dot and VLM gating).
     MOTION_MIN_PCT: float = _f("MOTION_MIN_PCT", 0.6)
-    # Legacy single-FPS knob (used as fallback if RENDER_FPS / GRID_TILE_FPS
-    # aren't set). Kept for backward compat; new code should branch on is_active.
-    STREAM_FPS: float = _f("STREAM_FPS", 1.0)
-    # Display refresh for the ACTIVE camera (the big tile under focus). Decoupled
-    # from detection: detection runs at DETECT_MAX_FPS, render publishes at this
-    # rate for smooth video. 12 is smooth and safe now that the render loop yields
-    # to detection while a YOLO batch is in flight (engine.detecting guard), so
-    # the active feed can't starve the detect loop. 20 still risks "AI 0/s" on
-    # CPU-only boxes — don't exceed ~12 without watching the SLOW-cycle log.
-    RENDER_FPS: float = _f("RENDER_FPS", 12.0)
-    # Display refresh for INACTIVE tiles. Lower saves CPU — we mostly need to see
-    # movement, not 30 fps. 4-6 is the sweet spot for an N-camera grid on CPU.
-    GRID_TILE_FPS: float = _f("GRID_TILE_FPS", 4.0)
-    # Cap how often the active room actually runs batched YOLO. This is the rate
-    # detection boxes refresh, so it drives how "snappy" detection feels. 6 is a
-    # touch quicker than 5 while staying affordable for a room batch on CPU at
-    # imgsz 640. Watch the [room-detect] SLOW cycle log; drop back to 5 if AI<1.5/s.
-    DETECT_MAX_FPS: float = _f("DETECT_MAX_FPS", 6.0)
-    # Inactive cameras refresh their tile people-count this often (seconds). They
-    # only count when the shared model lock is free, so they never slow the active
-    # camera. 0 disables per-tile counting. ~8s keeps every tile live cheaply.
-    GRID_COUNT_INTERVAL: float = _f("GRID_COUNT_INTERVAL", 8.0)
+    # Cap rate at which a NON-visible rule camera runs YOLO. Visible cameras
+    # run as fast as decode + lock-serialized YOLO allow; non-visible rule cams
+    # are throttled so they don't steal CPU from what the user is watching.
+    MONITOR_FPS: float = _f("MONITOR_FPS", 1.5)
 
 
 settings = Settings()
@@ -112,45 +74,41 @@ def _nvr_creds(tag: str):
 
 
 def _build_rtsp(ip: str, user: str, pw: str, channel: int) -> str:
-    # URL-encode the password (@ -> %40, $ -> %24, ...) so RTSP parsing is safe.
     return f"rtsp://{user}:{_quote(pw, safe='')}@{ip}:554/Streaming/Channels/{channel}"
 
 
 def _load_cameras():
-    """Resolve backend/cameras.json into [{id,name,url}] using .env NVR creds.
+    """Resolve backend/cameras.json into [{id,name,room,url}] using .env NVR creds.
 
-    Cameras whose NVR creds are absent are skipped. Falls back to a single
-    camera wrapping VIDEO_SOURCE when no registry/creds are available.
+    ONE stream per camera: the sub-stream (channel x02). Reconfigure that sub
+    profile via scripts/upgrade_substreams.py to whatever quality detection
+    needs. Cameras whose NVR creds aren't in .env are skipped; ENABLED_ROOMS
+    in .env optionally restricts to a subset of rooms.
     """
     path = _Path(__file__).resolve().parent / "cameras.json"
     cams, default = [], None
-    # Optional whitelist: ENABLED_ROOMS=Restaurant,Event Hall,Jacuzzi keeps only those
-    # rooms' cameras loaded (fewer concurrent 4K/RTSP streams = more CPU + stability +
-    # fewer decode artifacts). Empty/unset = load all. Fully reversible from .env.
     _enabled = {r.strip() for r in os.environ.get("ENABLED_ROOMS", "").split(",") if r.strip()}
     try:
         spec = _json.loads(path.read_text(encoding="utf-8"))
         default = spec.get("default_active")
         for c in spec.get("cameras", []):
             if _enabled and c.get("room") not in _enabled:
-                continue  # room not in the ENABLED_ROOMS whitelist
+                continue
             ip, user, pw = _nvr_creds(str(c.get("nvr", "")))
             if not ip or not pw:
-                continue  # NVR creds not in .env -> skip this camera
-            sub_ch = int(c["channel"])                # x02 = 360p sub-stream (light tiles)
-            main_ch = (sub_ch // 100) * 100 + 1       # x01 = 4K main (active big view)
+                continue
+            sub_ch = int(c["channel"])  # x02 sub-stream — the single source
             cams.append({
                 "id": c["id"],
                 "name": c.get("name", c["id"]),
-                "room": c.get("room", c.get("name", c["id"])),   # grouping for the UI
-                "url": _build_rtsp(ip, user, pw, sub_ch),        # tile / inactive (light)
-                "main_url": _build_rtsp(ip, user, pw, main_ch),  # 4K when AI-active
+                "room": c.get("room", c.get("name", c["id"])),
+                "url": _build_rtsp(ip, user, pw, sub_ch),
             })
     except Exception:
         cams = []
-    if not cams:  # backward-compatible single-camera mode
-        cams = [{"id": "camera", "name": "Camera",
-                 "url": settings.VIDEO_SOURCE, "main_url": settings.VIDEO_SOURCE}]
+    if not cams:  # backward-compatible single-camera mode (no NVR creds)
+        cams = [{"id": "camera", "name": "Camera", "room": "Camera",
+                 "url": settings.VIDEO_SOURCE}]
         default = "camera"
     if default not in {c["id"] for c in cams}:
         default = cams[0]["id"]

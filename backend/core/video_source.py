@@ -172,8 +172,8 @@ class VideoSource:
         if self.continuous:
             with self._frame_lock:
                 return self._latest
-        # on-demand (tile) mode: decode one frame now. TCP back-pressure keeps the
-        # decode near the read rate, so a tile read at GRID_TILE_FPS costs ~that.
+        # on-demand mode: decode one frame now. TCP back-pressure keeps the
+        # decode near the read rate, so an infrequent read costs ~that.
         with self._read_lock:
             if self._cap is None:
                 return None
