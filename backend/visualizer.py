@@ -76,7 +76,7 @@ def _draw_hud(img, state):
     h, w = img.shape[:2]
     state = state or {}
     cv2.rectangle(img, (0, 0), (w, 30), (20, 20, 20), -1)
-    txt = (f"WATCHFUL   FPS {state.get('fps', 0):.0f}   AI {state.get('detect_fps', 0):.0f}/s   "
+    txt = (f"THE WATCHER   FPS {state.get('fps', 0):.0f}   AI {state.get('detect_fps', 0):.0f}/s   "
            f"persons {state.get('persons', 0)}   conditions {state.get('conditions', 0)}")
     cv2.putText(img, txt, (8, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 170), 2)
     le = state.get("last_event")
@@ -109,7 +109,7 @@ def draw_overlay(frame, dets, pose_map, tracker=None, state=None, zones=None, bo
             cv2.rectangle(img, (x1, max(0, y1 - th - 8)), (x1 + tw + 6, y1), col, -1)
             cv2.putText(img, label, (x1 + 3, max(12, y1 - 5)),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 0, 0), 2)
-    # HUD bar (WATCHFUL / FPS / AI / persons / conditions + LAST) disabled — that
+    # HUD bar (THE WATCHER / FPS / AI / persons / conditions + LAST) disabled — that
     # info lives in the UI chrome now and the baked-in black/yellow bar overlapped
     # the live-view overlay. Re-enable by restoring: _draw_hud(img, state)
     return img

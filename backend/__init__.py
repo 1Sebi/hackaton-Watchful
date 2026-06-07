@@ -1,4 +1,4 @@
-"""Watchful backend — local, zero-cloud camera AI agent."""
+"""The Watcher backend — local, zero-cloud camera AI agent."""
 import os as _os
 
 # RTSP hardening — MUST run before ANY cv2/FFmpeg import in the package

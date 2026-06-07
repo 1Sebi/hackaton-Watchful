@@ -60,11 +60,11 @@ def main() -> int:
     # 2) Webhook generic POST
     wh = WebhookSender(url=f"http://{host}/hook", kind="generic")
     _CAPTURED.clear()
-    wok = wh.send("4 people in pool", title="Watchful")
+    wok = wh.send("4 people in pool", title="The Watcher")
     checks["webhook_ok"] = wok is True and _CAPTURED and "4 people in pool" in _CAPTURED[-1]["body"]
 
     # 3) Logger writes JSONL
-    tmp_log = os.path.join(tempfile.gettempdir(), "watchful_events_test.jsonl")
+    tmp_log = os.path.join(tempfile.gettempdir(), "watcher_events_test.jsonl")
     if os.path.exists(tmp_log):
         os.remove(tmp_log)
     lg = EventLogger(tmp_log)
@@ -78,7 +78,7 @@ def main() -> int:
     disp = ActionDispatcher(
         hikvision=HikvisionClient(ip=host, user="admin", password="pass"),
         webhook=WebhookSender(url=f"http://{host}/hook"),
-        logger=EventLogger(os.path.join(tempfile.gettempdir(), "watchful_disp_test.jsonl")),
+        logger=EventLogger(os.path.join(tempfile.gettempdir(), "watcher_disp_test.jsonl")),
     )
     _CAPTURED.clear()
     r_relay = asyncio.run(disp.dispatch({"type": "relay", "port": 2}, {"reason": "x"}))

@@ -48,7 +48,7 @@ export default function App() {
             <span className="hidden h-8 w-px bg-white/10 sm:block" />
             <div className="hidden flex-col leading-tight sm:flex">
               <span className="flex items-center gap-1.5 text-sm font-bold text-white">
-                <span className="text-base">👁</span> Watchful
+                <span className="text-base">👁</span> The Watcher
               </span>
             </div>
           </div>

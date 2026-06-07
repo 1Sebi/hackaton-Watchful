@@ -16,7 +16,7 @@ class WebhookSender:
     def send(
         self,
         message: str,
-        title: str = "Watchful",
+        title: str = "The Watcher",
         url: Optional[str] = None,
         priority: Optional[str] = None,
         tags: Optional[str] = None,
@@ -32,7 +32,7 @@ class WebhookSender:
             elif kind == "ntfy" or "ntfy" in target:
                 # HTTP headers must be latin-1; strip emoji/unicode from the Title
                 # (the emoji is carried by the Tags header instead).
-                safe_title = title.encode("ascii", "ignore").decode().strip() or "Watchful"
+                safe_title = title.encode("ascii", "ignore").decode().strip() or "The Watcher"
                 headers = {"Title": safe_title}
                 if priority:  # ntfy: min|low|default|high|urgent
                     headers["Priority"] = priority

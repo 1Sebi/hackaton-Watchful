@@ -1,4 +1,4 @@
-"""Watchful FastAPI app — REST + MJPEG + WebSockets, with the agent loop running
+"""The Watcher FastAPI app — REST + MJPEG + WebSockets, with the agent loop running
 as a background thread for the app's lifetime.
 
 Run:  uvicorn backend.main:app --reload   ->  http://localhost:8000/docs
@@ -26,7 +26,7 @@ async def lifespan(app: FastAPI):
         manager.stop()
 
 
-app = FastAPI(title="Watchful", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="The Watcher", version="1.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -48,4 +48,4 @@ app.include_router(ws.router)
 
 @app.get("/", tags=["meta"])
 def root():
-    return {"name": "Watchful", "status": "ok", "cameras": get_manager().cameras_state()}
+    return {"name": "The Watcher", "status": "ok", "cameras": get_manager().cameras_state()}

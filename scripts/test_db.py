@@ -12,7 +12,7 @@ import tempfile
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # point the DB at a temp file BEFORE importing backend.database
-_tmp = os.path.join(tempfile.gettempdir(), "watchful_test.db")
+_tmp = os.path.join(tempfile.gettempdir(), "watcher_test.db")
 if os.path.exists(_tmp):
     os.remove(_tmp)
 os.environ["DATABASE_URL"] = f"sqlite:///{_tmp}"

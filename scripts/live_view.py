@@ -44,7 +44,7 @@ def main() -> None:
         print("  FAILED to open stream.")
         return
 
-    win = f"Watchful LIVE - {args.ip} cam{args.cam} ({args.stream}) - q=quit"
+    win = f"The Watcher LIVE - {args.ip} cam{args.cam} ({args.stream}) - q=quit"
     fps, t_prev, frames, drops = 0.0, time.time(), 0, 0
     while True:
         ok, frame = cap.read()

@@ -1,7 +1,7 @@
 """End-to-end API test via FastAPI TestClient (starts the real pipeline).
 
 Exercises REST CRUD, MJPEG + snapshot, and WebSocket state. Uses a throwaway DB
-so it doesn't touch your real watchful.db. Needs a camera (VIDEO_SOURCE).
+so it doesn't touch your real watcher.db. Needs a camera (VIDEO_SOURCE).
 
 Usage:  python scripts/test_api.py
 """
@@ -15,7 +15,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # isolate DB before importing the app
-_tmp = os.path.join(tempfile.gettempdir(), "watchful_api_test.db")
+_tmp = os.path.join(tempfile.gettempdir(), "watcher_api_test.db")
 if os.path.exists(_tmp):
     os.remove(_tmp)
 os.environ["DATABASE_URL"] = f"sqlite:///{_tmp}"

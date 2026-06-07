@@ -34,7 +34,7 @@ class ActionDispatcher:
         action = action or {"type": "log"}
         kind = (action.get("type") or "log").lower()
         ctx = context or {}
-        message = action.get("message") or ctx.get("reason") or "Watchful trigger"
+        message = action.get("message") or ctx.get("reason") or "The Watcher trigger"
         conf = ctx.get("confidence")
         full = message if conf is None else f"{message} (conf {float(conf):.2f})"
         cam = ctx.get("camera_name") or ctx.get("camera_id")
@@ -53,12 +53,12 @@ class ActionDispatcher:
                 return {"type": kind, "ok": ok, "port": int(action.get("port", 1)), "state": state}
             if kind == "telegram":
                 res = await asyncio.to_thread(
-                    send_telegram, f"⚠️ Watchful: {full}",
+                    send_telegram, f"⚠️ The Watcher: {full}",
                     action.get("token", ""), action.get("chat_id", ""))
                 return {"type": "telegram", **res}
             if kind == "whatsapp":
                 res = await asyncio.to_thread(
-                    send_whatsapp, f"⚠️ Watchful: {full}",
+                    send_whatsapp, f"⚠️ The Watcher: {full}",
                     action.get("phone", ""), action.get("apikey", ""))
                 return {"type": "whatsapp", **res}
             if kind == "ntfy":
@@ -74,13 +74,13 @@ class ActionDispatcher:
                 body = message if conf is None else f"{message} (conf {float(conf):.2f})"
                 wh = WebhookSender(url=url, kind="ntfy")
                 ok = await asyncio.to_thread(
-                    wh.send, body, action.get("title", "⚠️ Watchful"), url,
+                    wh.send, body, action.get("title", "⚠️ The Watcher"), url,
                     action.get("priority", "high"), action.get("tags", "warning"),
                 )
                 return {"type": "ntfy", "ok": ok}
             if kind == "webhook":
                 wh = self.webhook or WebhookSender(url=action.get("url"), kind=action.get("kind", "generic"))
-                ok = await asyncio.to_thread(wh.send, message, action.get("title", "Watchful"), action.get("url"))
+                ok = await asyncio.to_thread(wh.send, message, action.get("title", "The Watcher"), action.get("url"))
                 return {"type": "webhook", "ok": ok}
             # default: structured log
             record = self.logger.log({"event": message, **ctx})

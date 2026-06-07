@@ -6,7 +6,7 @@ import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
-DB_URL = os.environ.get("DATABASE_URL", "sqlite:///watchful.db")
+DB_URL = os.environ.get("DATABASE_URL", "sqlite:///watcher.db")
 
 _connect_args = {"check_same_thread": False} if DB_URL.startswith("sqlite") else {}
 engine = create_engine(DB_URL, connect_args=_connect_args, future=True)

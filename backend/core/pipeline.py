@@ -243,7 +243,7 @@ class AgentPipeline:
             cv2.putText(img, f"#{d.track_id} {dur:.0f}s", (x1, max(12, y1 - 6)),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 2)
         cv2.rectangle(img, (0, 0), (img.shape[1], 26), (0, 0, 0), -1)
-        cv2.putText(img, f"Watchful  {self.fps:.0f} FPS  persons:{self.tracker.active_count}",
+        cv2.putText(img, f"The Watcher  {self.fps:.0f} FPS  persons:{self.tracker.active_count}",
                     (8, 18), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
         return img
 

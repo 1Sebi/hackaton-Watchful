@@ -1,9 +1,9 @@
-# Watchful
+# The Watcher
 
 > **Hack A Ton 2026 · ThePlace Camera Agent (Track 2).**
 > Tell the camera what to watch — in plain language — and it acts. 100% local.
 
-A real venue (hotel) carries 21 Hikvision cameras across 2 NVRs. Watchful gives
+A real venue (hotel) carries 21 Hikvision cameras across 2 NVRs. The Watcher gives
 each room a self-service AI agent: write a rule like *"more than 10 people in
 the event hall → notify me"* or *"someone raises a hand in the jacuzzi → relay
 1 on for 5 minutes"*, and it runs continuously — no cloud, no API key, no

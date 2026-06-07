@@ -16,7 +16,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-_tmp = os.path.join(tempfile.gettempdir(), "watchful_e2e.db")
+_tmp = os.path.join(tempfile.gettempdir(), "watcher_e2e.db")
 if os.path.exists(_tmp):
     os.remove(_tmp)
 os.environ["DATABASE_URL"] = f"sqlite:///{_tmp}"

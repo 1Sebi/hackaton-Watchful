@@ -4,7 +4,7 @@ Guidance for Claude Code sessions on this repo.
 
 ## What this is
 
-Watchful turns a natural-language condition ("notify me when someone raises a hand in the jacuzzi") into a structured, checkable **Predicate**, then runs a continuous agent loop that perceives a live camera feed, reasons about it, and acts — **100% local** (Ollama VLM + YOLO + SQLite + localhost UI; no cloud, no API key). The differentiator is a **low false-trigger rate**, enforced by a five-mechanism anti-false-positive (AFP) layer; treat that reliability as a primary design constraint, not an afterthought.
+The Watcher turns a natural-language condition ("notify me when someone raises a hand in the jacuzzi") into a structured, checkable **Predicate**, then runs a continuous agent loop that perceives a live camera feed, reasons about it, and acts — **100% local** (Ollama VLM + YOLO + SQLite + localhost UI; no cloud, no API key). The differentiator is a **low false-trigger rate**, enforced by a five-mechanism anti-false-positive (AFP) layer; treat that reliability as a primary design constraint, not an afterthought.
 
 ## Commands
 

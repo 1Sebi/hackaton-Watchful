@@ -574,7 +574,7 @@ class CameraManager:
             info = p.finalize()
         if not info["ok"]:
             return {"ok": False, "error": "no frames recorded (person was not seen)", **info}
-        caption = (f"Watchful — tracked person #{info['track_id']} on "
+        caption = (f"The Watcher — tracked person #{info['track_id']} on "
                    f"{info['camera_name']} · {info['duration']}s, {info['frames']} frames")
         tg = send_telegram_video(info["path"], caption)
         return {"ok": tg.get("ok", False), "telegram": tg, **info}

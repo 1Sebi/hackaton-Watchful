@@ -35,7 +35,7 @@ class Settings:
     # net for cameras whose sub profile someone bumped above 1280.
     FRAME_MAX_WIDTH: int = int(_f("FRAME_MAX_WIDTH", 1280))
     VLM_MAX_FPS: float = _f("VLM_MAX_FPS", 1.0)
-    DATABASE_URL: str = os.environ.get("DATABASE_URL", "sqlite:///watchful.db")
+    DATABASE_URL: str = os.environ.get("DATABASE_URL", "sqlite:///watcher.db")
     # ntfy.sh phone notifications. A condition with action {"type":"ntfy"} posts to
     # NTFY_BASE_URL/NTFY_TOPIC. Public service -> generic alert text only.
     NTFY_BASE_URL: str = os.environ.get("NTFY_BASE_URL", "https://ntfy.sh")
